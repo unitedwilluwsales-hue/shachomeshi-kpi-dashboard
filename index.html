@@ -135,10 +135,7 @@
 
 <div class="card" id="chartCard" style="display:none;">
   <h2>月次推移</h2>
-  <div class="toggle-row" id="metricButtons"></div>
-  <div class="note" style="margin:0 0 6px;">複数選択できます（クリックで追加・解除、最低1つ）。</div>
-  <svg class="chart-svg" id="chartSvg" viewBox="0 0 1000 260"></svg>
-  <div id="chartLegend" style="margin-top:6px;"></div>
+  <div id="chartCardBody"></div>
 </div>
 
 <div class="card" id="funnelCard" style="display:none;">
@@ -466,14 +463,16 @@
     { key: "cost", label: "集客コスト", color: "#b8860b", getter: function (m) { return m.cost; }, isYen: true }
   ];
 
-  function renderChart(months, upToIdx) {
-    document.getElementById("metricButtons").innerHTML = METRIC_DEFS.map(function (m) {
-      var active = chartState.metrics.indexOf(m.key) !== -1;
+  // 月次推移グラフ本体（Dashboardと経由別内訳の両方から使う共通部品）。
+  // scope で「どのグラフのボタンか」を区別し、クリック時にどのstateを更新するか決める。
+  function buildTrendChartHtml(months, upToIdx, selectedMetrics, scope) {
+    var buttonsHtml = METRIC_DEFS.map(function (m) {
+      var active = selectedMetrics.indexOf(m.key) !== -1;
       var style = active ? "background:" + m.color + ";border-color:" + m.color + ";color:#fff;" : "";
-      return '<button class="toggle-btn' + (active ? " active" : "") + '" style="' + style + '" data-metric="' + m.key + '">' + esc(m.label) + "</button>";
+      return '<button class="toggle-btn' + (active ? " active" : "") + '" style="' + style + '" data-chart-scope="' + scope + '" data-metric="' + m.key + '">' + esc(m.label) + "</button>";
     }).join("");
 
-    var selected = METRIC_DEFS.filter(function (m) { return chartState.metrics.indexOf(m.key) !== -1; });
+    var selected = METRIC_DEFS.filter(function (m) { return selectedMetrics.indexOf(m.key) !== -1; });
     var x0 = 50, y0 = 20, plotW = 920, plotH = 200;
     var n = upToIdx + 1;
     var xStep = n > 1 ? plotW / (n - 1) : 0;
@@ -502,18 +501,23 @@
     for (var i = 0; i <= upToIdx; i++) {
       xLabels += '<text x="' + (x0 + i * xStep).toFixed(1) + '" y="248" font-size="11" fill="#767676" text-anchor="middle">' + esc(MONTH_LABELS[i]) + "</text>";
     }
-    document.getElementById("chartLegend").innerHTML = legendHtml;
-    document.getElementById("chartSvg").innerHTML = linesHtml + xLabels;
+    return '<div class="toggle-row">' + buttonsHtml + '</div>' +
+      '<div class="note" style="margin:0 0 6px;">複数選択できます（クリックで追加・解除、最低1つ）。</div>' +
+      '<svg class="chart-svg" viewBox="0 0 1000 260">' + linesHtml + xLabels + '</svg>' +
+      '<div style="margin-top:6px;">' + legendHtml + "</div>";
   }
 
-  document.getElementById("metricButtons").addEventListener("click", function (e) {
-    var btn = e.target.closest("[data-metric]");
+  // クリックされたボタンがどのグラフのものかをdata-chart-scopeで判定し、対応するstateを更新する
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-chart-scope]");
     if (!btn) return;
     var key = btn.getAttribute("data-metric");
-    var idx = chartState.metrics.indexOf(key);
-    if (idx === -1) chartState.metrics.push(key);
-    else if (chartState.metrics.length > 1) chartState.metrics.splice(idx, 1); // 最低1つは選択状態を維持
-    if (window.__lastAgg) renderChart(window.__lastAgg.months, window.__lastAgg.upToIdx);
+    var scope = btn.getAttribute("data-chart-scope");
+    var metricsArr = scope === "channel" ? state.channelChartMetrics : chartState.metrics;
+    var idx = metricsArr.indexOf(key);
+    if (idx === -1) metricsArr.push(key);
+    else if (metricsArr.length > 1) metricsArr.splice(idx, 1); // 最低1つは選択状態を維持
+    renderPage();
   });
 
   // ---- 表形式ページの共通部品 ----
@@ -861,6 +865,8 @@
         return '<div class="kpi-card"><div class="kpi-label">' + esc(c.label) + '</div><div class="kpi-value">' + esc(c.value) + "</div></div>";
       }).join("") + "</div>";
 
+    var chartHtml = buildTrendChartHtml(chMonths, upToIdx, state.channelChartMetrics, "channel");
+
     var funnelStages = [
       { name: "登録", value: t.reg }, { name: "応募", value: t.appUnique.size },
       { name: "参加確定", value: t.confUnique.size }, { name: "当日参加", value: t.attUnique.size }
@@ -907,6 +913,7 @@
     return '<div class="note">登録は「経由」フィールドで、応募・参加確定・当日参加は学生IDのJOINで同じ経由に絞り込んでいます。費用は経由に紐付けられないためCPAは表示していません。</div>' +
       selectHtml +
       '<div class="kpi-group-label">選択中の経由：' + esc(state.channelFilter) + "（年度累計）</div>" + kpiHtml +
+      '<div class="kpi-group-label">月次推移</div>' + chartHtml +
       '<div class="kpi-group-label">ファネル</div>' + funnelHtml +
       '<div class="kpi-group-label">登録数：経由×月の内訳（参考）</div>' +
       buildTableHtml(cols, tableRows, { totalColIndex: 12 });
@@ -924,7 +931,7 @@
     { key: "daily", label: "デイリー実績" },
     { key: "settings", label: "設定" }
   ];
-  var state = { page: "dashboard", centerIdx: null, targets: {}, channelFilter: null };
+  var state = { page: "dashboard", centerIdx: null, targets: {}, channelFilter: null, channelChartMetrics: ["reg"] };
   var lastAgg = null; // { sources, fiscalStartYear, agg, upToIdx }
 
   function renderNav() {
@@ -980,7 +987,7 @@
       renderKpis(t, tt);
       renderCostRow(t);
       renderFunnel(t);
-      renderChart(months, upToIdx);
+      document.getElementById("chartCardBody").innerHTML = buildTrendChartHtml(months, upToIdx, chartState.metrics, "dashboard");
       return;
     }
     if (isSettings) { renderSettingsContent(); return; }
@@ -1021,7 +1028,6 @@
       var m = agg.months[i];
       if (m.regSet.size || m.appCount || m.confCount || m.attCount || m.cost) upToIdx = i;
     }
-    window.__lastAgg = { months: agg.months, upToIdx: upToIdx };
     lastAgg = { sources: sources, fiscalStartYear: fiscalStartYear, agg: agg, upToIdx: upToIdx };
 
     document.getElementById("fiscalYearLabel").textContent = fiscalStartYear + "年度（" + fiscalStartYear + "/12〜" + (fiscalStartYear + 1) + "/11）";
