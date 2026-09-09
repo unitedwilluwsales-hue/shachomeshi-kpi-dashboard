@@ -164,9 +164,9 @@
 (function () {
   "use strict";
 
-  // ローカル開発中は wrangler dev の実際のポートに合わせて変更してください。
-  // 本番デプロイ後は Cloudflare Workers の本番URLに差し替えます。
-  var WORKER_BASE_URL = "http://127.0.0.1:8791";
+  // 本番Cloudflare Worker。ローカルでwrangler devを使ってテストする場合は
+  // 一時的に "http://127.0.0.1:<port>" に変更してください（pushはしないこと）。
+  var WORKER_BASE_URL = "https://shachomeshi-kpi-worker.unitedwill-uw-sales.workers.dev";
   document.getElementById("workerUrlLabel").textContent = WORKER_BASE_URL;
 
   var CATEGORY_LABEL = { send: "送客費", ad: "広告費", other: "その他" };
