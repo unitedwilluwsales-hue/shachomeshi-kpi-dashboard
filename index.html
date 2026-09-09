@@ -646,26 +646,21 @@
       cumAppArr.push(i <= upToIdx ? cumApp : null);
       cumConfArr.push(i <= upToIdx ? cumConf : null);
     }
-    var rows = [];
-    if (!channelMode) rows.push({ label: "費用", cells: monthCells(function (i) { return months[i].cost; }, true, null, upToIdx) });
-    rows.push(
+    var rows = [
+      { label: "費用", cells: monthCells(function (i) { return months[i].cost; }, true, null, upToIdx) },
       { label: "登録", cells: monthCells(function (i) { return months[i].regSet.size; }, false, null, upToIdx) },
       { label: "応募件数", cells: monthCells(function (i) { return months[i].appCount; }, false, null, upToIdx) },
       { label: "応募ユニーク", cells: monthCells(function (i) { return months[i].appSet.size; }, false, null, upToIdx) },
       { label: "参加確定件数", cells: monthCells(function (i) { return months[i].confCount; }, false, null, upToIdx) },
       { label: "参加確定ユニーク", cells: monthCells(function (i) { return months[i].confSet.size; }, false, null, upToIdx) },
       { label: "当日参加件数", cells: monthCells(function (i) { return months[i].attCount; }, false, null, upToIdx) },
-      { label: "当日参加ユニーク", cells: monthCells(function (i) { return months[i].attSet.size; }, false, null, upToIdx) }
-    );
-    if (!channelMode) {
-      rows.push(
-        { label: "登録CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].regSet.size; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
-        { label: "応募CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].appCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
-        { label: "参加確定CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].confCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
-        { label: "当日参加CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].attCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
-        { label: "最終CPA", cells: monthCells(function (i) { var c = months[i].cost, reg = months[i].regSet.size; return c > 0 && reg ? (c - months[i].concRevenue) / reg : null; }, true, null, upToIdx) }
-      );
-    }
+      { label: "当日参加ユニーク", cells: monthCells(function (i) { return months[i].attSet.size; }, false, null, upToIdx) },
+      { label: "登録CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].regSet.size; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+      { label: "応募CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].appCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+      { label: "参加確定CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].confCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+      { label: "当日参加CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].attCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) }
+    ];
+    if (!channelMode) rows.push({ label: "最終CPA", cells: monthCells(function (i) { var c = months[i].cost, reg = months[i].regSet.size; return c > 0 && reg ? (c - months[i].concRevenue) / reg : null; }, true, null, upToIdx) });
     rows.push(
       { label: "UU", cells: monthCells(function (i) { return months[i].regSet.size; }, false, null, upToIdx) },
       { label: "総応募（累計）", cells: cumAppArr.map(function (v) { return v == null ? "―" : fmtInt(v); }) },
@@ -673,7 +668,7 @@
     );
     if (!channelMode) rows.push({ label: "同時登録売上", cells: monthCells(function (i) { return months[i].concRevenue; }, true, null, upToIdx) });
     var note = "UUは暫定値として登録数と同値。総応募・総参加は年度開始（12月）からの累計。" +
-      (channelMode ? " 経由を選択中のため、費用・CPA・同時登録売上は経由に紐付けられず非表示です。" : "");
+      (channelMode ? " 経由選択時の費用・CPAは、コスト実績の「経由」欄が一致するものだけを集計しています。最終CPA・同時登録売上は経由に紐付けられないため非表示です。" : "");
     return '<div class="note">' + note + '</div>' + buildTableHtml(MONTH_LABELS, rows);
   }
 
@@ -708,7 +703,7 @@
   function renderMonthComparePage(months, upToIdx, centerIdx, channelMode) {
     var idxs = [centerIdx - 1, centerIdx, centerIdx + 1];
     var colNames = ["前月", "当月", "翌月"];
-    var metrics = channelMode ? MC_METRICS.filter(function (m) { return !m.cpa && m.key !== "cost"; }) : MC_METRICS;
+    var metrics = channelMode ? MC_METRICS.filter(function (m) { return m.key !== "finalCpa"; }) : MC_METRICS;
     var html = '<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);">';
     for (var c = 0; c < 3; c++) {
       var idx = idxs[c];
@@ -743,7 +738,7 @@
     }
     html += "</div>";
     var note = "対象月セレクターで選んだ月を「当月」として、前月・翌月と比較します。" +
-      (channelMode ? " 経由を選択中のため、費用・CPAは経由に紐付けられず非表示です。" : "");
+      (channelMode ? " 経由選択時の費用・CPAは、コスト実績の「経由」欄が一致するものだけを集計しています。最終CPAは経由に紐付けられないため非表示です。" : "");
     return '<div class="note">' + note + '</div>' + html;
   }
 
@@ -858,6 +853,16 @@
       if (isConfirmed && r.confirmedAt) { var ci = fiscalIndex(r.confirmedAt, fiscalStartYear); if (ci != null) { months[ci].confCount++; months[ci].confSet.add(r.studentId); } }
       if (isAttended && r.eventDate) { var evi = fiscalIndex(r.eventDate, fiscalStartYear); if (evi != null) { months[evi].attCount++; months[evi].attSet.add(r.studentId); } }
     });
+    // コスト実績の「経由」欄が選択中の経由と完全一致するものだけを積み上げる（一致しないもの・未設定は含めない）
+    (sources.costs.data || []).forEach(function (r) {
+      if (!r.date || r.channel !== channel) return;
+      var ts = new Date(r.date + "T00:00:00+09:00").getTime();
+      var idx = fiscalIndex(ts, fiscalStartYear);
+      if (idx == null) return;
+      var amt = Number(r.amount) || 0;
+      months[idx].cost += amt;
+      if (months[idx].costBreakdown[r.category] != null) months[idx].costBreakdown[r.category] += amt;
+    });
     return months;
   }
 
@@ -872,16 +877,30 @@
 
     var chMonths = aggregateByChannel(sources, fiscalStartYear, state.channelFilter);
     var t = totals(chMonths, upToIdx);
+    var hasCost = t.cost > 0;
+    var cpaReg = hasCost ? safeDiv(t.cost, t.reg) : null;
+    var cpaApp = hasCost ? safeDiv(t.cost, t.appCount) : null;
+    var cpaConf = hasCost ? safeDiv(t.cost, t.confCount) : null;
+    var cpaAtt = hasCost ? safeDiv(t.cost, t.attCount) : null;
 
-    var kpiHtml = '<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);">' +
-      [
-        { label: "登録数", value: fmtInt(t.reg) },
-        { label: "応募数（件数）", value: fmtInt(t.appCount) },
-        { label: "参加確定数（件数）", value: fmtInt(t.confCount) },
-        { label: "当日参加数（件数）", value: fmtInt(t.attCount) }
-      ].map(function (c) {
-        return '<div class="kpi-card"><div class="kpi-label">' + esc(c.label) + '</div><div class="kpi-value">' + esc(c.value) + "</div></div>";
+    function kpiCardsHtml(cards, cols) {
+      return '<div class="kpi-grid" style="grid-template-columns:repeat(' + cols + ',1fr);">' + cards.map(function (c) {
+        var dim = c.value === "―" ? " dim" : "";
+        return '<div class="kpi-card"><div class="kpi-label">' + esc(c.label) + '</div><div class="kpi-value' + dim + '">' + esc(c.value) + "</div></div>";
       }).join("") + "</div>";
+    }
+    var kpiHtml = kpiCardsHtml([
+      { label: "費用", value: fmtYen(t.cost) },
+      { label: "登録数", value: fmtInt(t.reg) },
+      { label: "応募数（件数）", value: fmtInt(t.appCount) },
+      { label: "参加確定数（件数）", value: fmtInt(t.confCount) },
+      { label: "当日参加数（件数）", value: fmtInt(t.attCount) }
+    ], 5) + '<div class="kpi-group-label">CPA（この経由にコスト実績で紐付けられた費用のみ）</div>' + kpiCardsHtml([
+      { label: "登録CPA", value: cpaReg == null ? "―" : fmtYen(cpaReg) },
+      { label: "応募CPA", value: cpaApp == null ? "―" : fmtYen(cpaApp) },
+      { label: "参加確定CPA", value: cpaConf == null ? "―" : fmtYen(cpaConf) },
+      { label: "当日参加CPA", value: cpaAtt == null ? "―" : fmtYen(cpaAtt) }
+    ], 4);
 
     var chartHtml = buildTrendChartHtml(chMonths, upToIdx, state.channelChartMetrics, "channel");
 
@@ -928,7 +947,7 @@
     totalCells.push(fmtInt(grandTotal));
     tableRows.push({ label: "合計", cells: totalCells, isTotal: true });
 
-    return '<div class="note">登録は「経由」フィールドで、応募・参加確定・当日参加は学生IDのJOINで同じ経由に絞り込んでいます。費用は経由に紐付けられないためCPAは表示していません。</div>' +
+    return '<div class="note">登録は「経由」フィールドで、応募・参加確定・当日参加は学生IDのJOINで同じ経由に絞り込んでいます。費用・CPAは、コスト実績の「経由」欄が選択中の経由と一致するものだけを集計した参考値です（最終CPAは同時登録売上を経由に紐付けられないため対象外）。</div>' +
       selectHtml +
       '<div class="kpi-group-label">選択中の経由：' + esc(state.channelFilter) + "（年度累計）</div>" + kpiHtml +
       '<div class="kpi-group-label">月次推移</div>' + chartHtml +
@@ -1181,18 +1200,22 @@
   function renderCostsTab() {
     var admin = document.getElementById("adminToggle").checked;
     var list = (lastSources.costs && lastSources.costs.data) || [];
+    var channelOpts = listChannels(lastSources);
     var formHtml = !admin ? "" :
       '<div class="card" style="margin-bottom:10px;"><h2>コスト実績を追加</h2>' +
       '<div class="row"><label>日付</label><input type="date" id="f_date"></div>' +
       '<div class="row"><label>コストのかけ方</label><input type="text" id="f_method" placeholder="例：Instagram広告"></div>' +
-      '<div class="row"><label>経由</label><input type="text" id="f_channel" placeholder="例：SNS広告"></div>' +
+      '<div class="row"><label>経由</label><select id="f_channel"><option value="">（全体・特定経由なし）</option>' +
+      channelOpts.map(function (ch) { return '<option value="' + esc(ch) + '">' + esc(ch) + "</option>"; }).join("") +
+      '</select></div>' +
       '<div class="row"><label>分類</label><select id="f_category"><option value="send">送客費</option><option value="ad">広告費</option><option value="other">その他</option></select></div>' +
       '<div class="row"><label>金額（円）</label><input type="number" id="f_amount" min="0" step="1"></div>' +
+      '<div class="note">経由を選ぶと、経由別内訳・年間管理・月間管理の経由別表示にこの費用がCPAとして反映されます。特定の経由に絞れない費用は「全体・特定経由なし」のままにしてください（全体の集計には含まれます）。</div>' +
       '<button data-action="add-cost">追加</button></div>';
     var rowsHtml = list.length === 0 ? '<tr><td colspan="6" style="color:var(--gray);">まだデータがありません</td></tr>' :
       list.slice().sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); }).map(function (e) {
         return "<tr><td>" + esc(e.date) + "</td><td>" + esc(CATEGORY_LABEL[e.category] || e.category) + "</td><td>" + esc(e.method) +
-          "</td><td>" + esc(e.channel) + "</td><td>" + fmtYen(e.amount) + "</td><td>" +
+          "</td><td>" + esc(e.channel || "―") + "</td><td>" + fmtYen(e.amount) + "</td><td>" +
           (admin ? '<button class="ghost" data-del="' + esc(e.id) + '">削除</button>' : "") + "</td></tr>";
       }).join("");
     var statusRows = Object.keys(lastSources).map(function (key) {
