@@ -33,11 +33,24 @@
   .badge{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;background:var(--accent-tint);color:var(--accent);}
   .note{font-size:11px;color:var(--gray);margin-bottom:10px;}
 
-  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
-  .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+  .kpi-group-label{font-size:11px;font-weight:800;color:var(--gray);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 8px;}
+  .kpi-group-label:first-of-type{margin-top:2px;}
+  .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:6px;}
+  .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-height:88px;}
+  .kpi-grid-primary .kpi-card{border-left:3px solid var(--accent);}
+  .kpi-grid-cpa .kpi-card{padding:10px 14px;min-height:64px;background:#fbfaf9;}
   .kpi-label{font-size:11px;color:var(--gray);font-weight:700;}
   .kpi-value{font-size:22px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;margin-top:4px;}
+  .kpi-grid-cpa .kpi-value{font-size:17px;}
   .kpi-value.dim{color:var(--gray);font-size:16px;}
+  .kpi-grid-cpa .kpi-value.dim{font-size:14px;}
+
+  .channel-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);}
+  .channel-row:last-child{border-bottom:none;}
+  .channel-name{width:160px;flex-shrink:0;font-size:12.5px;font-weight:700;}
+  .channel-bar-wrap{flex:1;background:var(--bg);border-radius:6px;overflow:hidden;height:16px;}
+  .channel-bar{height:100%;background:var(--accent);border-radius:6px;}
+  .channel-count{width:100px;flex-shrink:0;text-align:right;font-size:12px;font-variant-numeric:tabular-nums;}
 
   .cost-row{display:flex;gap:12px;flex-wrap:wrap;}
   .cost-card{flex:1;min-width:130px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
@@ -116,7 +129,10 @@
 <div class="card" id="dashboardCard" style="display:none;">
   <h2>年度サマリー <span id="fiscalYearLabel" style="color:var(--gray);font-weight:400;"></span></h2>
   <div class="note" id="dashboardNote"></div>
-  <div class="kpi-grid" id="kpiGrid"></div>
+  <div class="kpi-group-label">主要実績</div>
+  <div class="kpi-grid kpi-grid-primary" id="kpiGridPrimary"></div>
+  <div class="kpi-group-label">CPA（獲得単価）</div>
+  <div class="kpi-grid kpi-grid-cpa" id="kpiGridCpa"></div>
 </div>
 
 <div class="card" id="costSummaryCard" style="display:none;">
@@ -124,10 +140,18 @@
   <div class="cost-row" id="costRow"></div>
 </div>
 
+<div class="card" id="channelCard" style="display:none;">
+  <h2>登録 経由別内訳</h2>
+  <div class="note" style="margin:0 0 10px;">「経由」フィールドの値をそのまま集計しています（表記ゆれ・テスト値も含む）。</div>
+  <div id="channelList"></div>
+</div>
+
 <div class="card" id="chartCard" style="display:none;">
   <h2>月次推移</h2>
   <div class="toggle-row" id="metricButtons"></div>
+  <div class="note" style="margin:0 0 6px;">複数選択できます（クリックで追加・解除、最低1つ）。</div>
   <svg class="chart-svg" id="chartSvg" viewBox="0 0 1000 260"></svg>
+  <div id="chartLegend" style="margin-top:6px;"></div>
 </div>
 
 <div class="card" id="funnelCard" style="display:none;">
@@ -183,6 +207,22 @@
   }
   function clearStatus() { document.getElementById("statusArea").innerHTML = ""; }
 
+  // 裏側で起きた通信エラーを記録しておき、設定＞データエラーで後から確認できるようにする
+  var errorLog = [];
+  function logError(context, message) {
+    errorLog.unshift({ time: new Date().toISOString(), context: context, message: String(message) });
+    if (errorLog.length > 50) errorLog.length = 50;
+    showStatus(context + ": " + message, "err");
+    if (state.page === "settings" && settingsState.tab === "data-errors") renderSettingsContent();
+  }
+  // fetchはHTTPエラー(4xx/5xx)でrejectしないため、r.okを見て明示的にエラー化する
+  function checkResponse(r) {
+    if (r.ok) return r.json();
+    return r.json().catch(function () { return {}; }).then(function (body) {
+      throw new Error("HTTP " + r.status + (body && body.error ? "（" + body.error + "）" : ""));
+    });
+  }
+
   // ---- 日付処理（Asia/Tokyo固定。UTCのまま月日判定しない） ----
   // Larkのタイムスタンプ(UTC ms)にJSTオフセットを足してから getUTC* で読むことで、
   // 閲覧者のブラウザのタイムゾーン設定に関係なく常にJSTとして扱う。
@@ -224,7 +264,8 @@
       confCount: 0, confSet: new Set(),
       attCount: 0, attSet: new Set(),
       cost: 0, costBreakdown: { send: 0, ad: 0, other: 0 },
-      concPeople: 0, concPeopleNet: 0, concRevenue: 0
+      concPeople: 0, concPeopleNet: 0, concRevenue: 0,
+      channelCounts: {}
     };
   }
 
@@ -239,6 +280,8 @@
       var idx = fiscalIndex(r.registeredAt, fiscalStartYear);
       if (idx == null) return;
       months[idx].regSet.add(r.studentId);
+      var ch = r.channel || "（未設定）";
+      months[idx].channelCounts[ch] = (months[idx].channelCounts[ch] || 0) + 1;
     });
 
     (sources.applications.data || []).forEach(function (r) {
@@ -317,7 +360,7 @@
 
   function totals(months, upToIdx) {
     var t = { reg: 0, appCount: 0, appUnique: new Set(), confCount: 0, confUnique: new Set(),
-      attCount: 0, attUnique: new Set(), cost: 0, concRevenue: 0 };
+      attCount: 0, attUnique: new Set(), cost: 0, concRevenue: 0, channelCounts: {} };
     for (var i = 0; i <= upToIdx; i++) {
       var m = months[i];
       t.reg += m.regSet.size;
@@ -329,6 +372,7 @@
       m.attSet.forEach(function (v) { t.attUnique.add(v); });
       t.cost += m.cost;
       t.concRevenue += m.concRevenue;
+      Object.keys(m.channelCounts).forEach(function (ch) { t.channelCounts[ch] = (t.channelCounts[ch] || 0) + m.channelCounts[ch]; });
     }
     return t;
   }
@@ -351,7 +395,7 @@
   }
 
   // ---- 描画 ----
-  var chartState = { metric: "reg" };
+  var chartState = { metrics: ["reg"] };
 
   function renderKpis(t, tt) {
     // cost=0は「無料で獲得できた」ではなく「まだコストが未入力」を意味するため、
@@ -378,21 +422,45 @@
     var cpaRegTarget = tt.reg ? tt.cost / tt.reg : 0;
     var finalCpaTarget = tt.reg ? (tt.cost - tt.concRevenue) / tt.reg : 0;
 
-    var cards = [
+    var primaryCards = [
       { label: "費用", value: fmtYen(t.cost), sub: costSub },
       { label: "登録数", value: fmtInt(t.reg), sub: subCount(t.reg, tt.reg) },
       { label: "応募数（件数）", value: fmtInt(t.appCount) },
       { label: "参加確定数（件数）", value: fmtInt(t.confCount) },
-      { label: "当日参加数（件数）", value: fmtInt(t.attCount) },
+      { label: "当日参加数（件数）", value: fmtInt(t.attCount) }
+    ];
+    var cpaCards = [
       { label: "登録CPA", value: cpaReg == null ? "―" : fmtYen(cpaReg), sub: subCpa(cpaReg, cpaRegTarget) },
       { label: "応募CPA", value: cpaApp == null ? "―" : fmtYen(cpaApp) },
       { label: "参加確定CPA", value: cpaConf == null ? "―" : fmtYen(cpaConf) },
       { label: "当日参加CPA", value: cpaAtt == null ? "―" : fmtYen(cpaAtt) },
       { label: "最終CPA", value: finalCpa == null ? "―" : fmtYen(finalCpa), sub: subCpa(finalCpa, finalCpaTarget) }
     ];
-    document.getElementById("kpiGrid").innerHTML = cards.map(function (c) {
-      var dim = c.value === "―" ? " dim" : "";
-      return '<div class="kpi-card"><div class="kpi-label">' + esc(c.label) + '</div><div class="kpi-value' + dim + '">' + esc(c.value) + "</div>" + (c.sub || "") + "</div>";
+    function renderCardGroup(elId, cards) {
+      document.getElementById(elId).innerHTML = cards.map(function (c) {
+        var dim = c.value === "―" ? " dim" : "";
+        return '<div class="kpi-card"><div class="kpi-label">' + esc(c.label) + '</div><div class="kpi-value' + dim + '">' + esc(c.value) + "</div>" + (c.sub || "") + "</div>";
+      }).join("");
+    }
+    renderCardGroup("kpiGridPrimary", primaryCards);
+    renderCardGroup("kpiGridCpa", cpaCards);
+  }
+
+  function renderChannelBreakdown(t) {
+    var entries = Object.keys(t.channelCounts).map(function (ch) { return { name: ch, count: t.channelCounts[ch] }; });
+    entries.sort(function (a, b) { return b.count - a.count; });
+    var total = entries.reduce(function (a, e) { return a + e.count; }, 0);
+    var max = entries.length ? entries[0].count : 1;
+    if (entries.length === 0) {
+      document.getElementById("channelList").innerHTML = '<div class="note" style="margin:0;">データがありません。</div>';
+      return;
+    }
+    document.getElementById("channelList").innerHTML = entries.map(function (e) {
+      var pct = total ? (e.count / total * 100).toFixed(1) : "0.0";
+      var barPct = (e.count / max * 100).toFixed(1);
+      return '<div class="channel-row"><div class="channel-name">' + esc(e.name) + '</div>' +
+        '<div class="channel-bar-wrap"><div class="channel-bar" style="width:' + barPct + '%;"></div></div>' +
+        '<div class="channel-count">' + fmtInt(e.count) + "件（" + pct + "%）</div></div>";
     }).join("");
   }
 
@@ -422,49 +490,60 @@
   }
 
   var METRIC_DEFS = [
-    { key: "reg", label: "登録数" }, { key: "appCount", label: "応募（件数）" },
-    { key: "confCount", label: "参加確定（件数）" }, { key: "attCount", label: "当日参加（件数）" },
-    { key: "cost", label: "集客コスト" }
+    { key: "reg", label: "登録数", color: "#d9631e", getter: function (m) { return m.regSet.size; }, isYen: false },
+    { key: "appCount", label: "応募（件数）", color: "#1e7a3d", getter: function (m) { return m.appCount; }, isYen: false },
+    { key: "confCount", label: "参加確定（件数）", color: "#2d6ca8", getter: function (m) { return m.confCount; }, isYen: false },
+    { key: "attCount", label: "当日参加（件数）", color: "#a4479c", getter: function (m) { return m.attCount; }, isYen: false },
+    { key: "cost", label: "集客コスト", color: "#b8860b", getter: function (m) { return m.cost; }, isYen: true }
   ];
 
   function renderChart(months, upToIdx) {
     document.getElementById("metricButtons").innerHTML = METRIC_DEFS.map(function (m) {
-      return '<button class="toggle-btn' + (chartState.metric === m.key ? " active" : "") + '" data-metric="' + m.key + '">' + esc(m.label) + "</button>";
+      var active = chartState.metrics.indexOf(m.key) !== -1;
+      var style = active ? "background:" + m.color + ";border-color:" + m.color + ";color:#fff;" : "";
+      return '<button class="toggle-btn' + (active ? " active" : "") + '" style="' + style + '" data-metric="' + m.key + '">' + esc(m.label) + "</button>";
     }).join("");
 
-    var series = [];
-    for (var i = 0; i <= upToIdx; i++) {
-      var m = months[i];
-      var v = chartState.metric === "reg" ? m.regSet.size
-        : chartState.metric === "appCount" ? m.appCount
-        : chartState.metric === "confCount" ? m.confCount
-        : chartState.metric === "attCount" ? m.attCount
-        : m.cost;
-      series.push(v);
-    }
-    var max = Math.max.apply(null, series.concat([1])) * 1.15;
+    var selected = METRIC_DEFS.filter(function (m) { return chartState.metrics.indexOf(m.key) !== -1; });
     var x0 = 50, y0 = 20, plotW = 920, plotH = 200;
-    var xStep = series.length > 1 ? plotW / (series.length - 1) : 0;
-    var pts = series.map(function (v, i) {
-      var x = x0 + i * xStep;
-      var y = y0 + plotH - (v / max) * plotH;
-      return { x: x, y: y, v: v, label: MONTH_LABELS[i] };
+    var n = upToIdx + 1;
+    var xStep = n > 1 ? plotW / (n - 1) : 0;
+
+    var allSeries = selected.map(function (m) {
+      var series = [];
+      for (var i = 0; i <= upToIdx; i++) series.push(m.getter(months[i]));
+      return { def: m, series: series };
     });
-    var pointsAttr = pts.map(function (p) { return p.x.toFixed(1) + "," + p.y.toFixed(1); }).join(" ");
-    var dots = pts.map(function (p) {
-      return '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="4" fill="#d9631e" stroke="#fff" stroke-width="1.5"><title>' + esc(p.label) + ": " + fmtInt(p.v) + "</title></circle>";
-    }).join("");
-    var labels = pts.map(function (p) {
-      return '<text x="' + p.x.toFixed(1) + '" y="248" font-size="11" fill="#767676" text-anchor="middle">' + esc(p.label) + "</text>";
-    }).join("");
-    document.getElementById("chartSvg").innerHTML =
-      '<polyline points="' + pointsAttr + '" fill="none" stroke="#d9631e" stroke-width="2.5"/>' + dots + labels;
+    var max = Math.max.apply(null, [1].concat(allSeries.reduce(function (a, s) { return a.concat(s.series); }, []))) * 1.15;
+
+    var linesHtml = "", legendHtml = "";
+    allSeries.forEach(function (s) {
+      var pts = s.series.map(function (v, i) {
+        var x = x0 + i * xStep, y = y0 + plotH - (v / max) * plotH;
+        return { x: x, y: y, v: v, label: MONTH_LABELS[i] };
+      });
+      var pointsAttr = pts.map(function (p) { return p.x.toFixed(1) + "," + p.y.toFixed(1); }).join(" ");
+      var dots = pts.map(function (p) {
+        return '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3.5" fill="' + s.def.color + '" stroke="#fff" stroke-width="1.5"><title>' + esc(s.def.label) + " " + esc(p.label) + ": " + (s.def.isYen ? fmtYen(p.v) : fmtInt(p.v)) + "</title></circle>";
+      }).join("");
+      linesHtml += '<polyline points="' + pointsAttr + '" fill="none" stroke="' + s.def.color + '" stroke-width="2.5"/>' + dots;
+      legendHtml += '<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-size:11px;color:var(--gray);"><span style="width:10px;height:10px;border-radius:50%;background:' + s.def.color + ';display:inline-block;"></span>' + esc(s.def.label) + "</span>";
+    });
+    var xLabels = "";
+    for (var i = 0; i <= upToIdx; i++) {
+      xLabels += '<text x="' + (x0 + i * xStep).toFixed(1) + '" y="248" font-size="11" fill="#767676" text-anchor="middle">' + esc(MONTH_LABELS[i]) + "</text>";
+    }
+    document.getElementById("chartLegend").innerHTML = legendHtml;
+    document.getElementById("chartSvg").innerHTML = linesHtml + xLabels;
   }
 
   document.getElementById("metricButtons").addEventListener("click", function (e) {
     var btn = e.target.closest("[data-metric]");
     if (!btn) return;
-    chartState.metric = btn.getAttribute("data-metric");
+    var key = btn.getAttribute("data-metric");
+    var idx = chartState.metrics.indexOf(key);
+    if (idx === -1) chartState.metrics.push(key);
+    else if (chartState.metrics.length > 1) chartState.metrics.splice(idx, 1); // 最低1つは選択状態を維持
     if (window.__lastAgg) renderChart(window.__lastAgg.months, window.__lastAgg.upToIdx);
   });
 
@@ -801,6 +880,7 @@
     var isTablePage = !isDashboard && !isSettings;
     showEl("dashboardCard", isDashboard);
     showEl("costSummaryCard", isDashboard);
+    showEl("channelCard", isDashboard);
     showEl("chartCard", isDashboard);
     showEl("funnelCard", isDashboard);
     showEl("tablePageCard", isTablePage);
@@ -814,6 +894,7 @@
       var tt = computeTargetTotals(state.targets || {}, lastAgg.fiscalStartYear, upToIdx);
       renderKpis(t, tt);
       renderCostRow(t);
+      renderChannelBreakdown(t);
       renderFunnel(t);
       renderChart(months, upToIdx);
       return;
@@ -926,10 +1007,10 @@
 
   function renderFieldMappingTab() {
     if (!settingsState.fieldMapping) {
-      fetch(WORKER_BASE_URL + "/api/field-mapping").then(function (r) { return r.json(); }).then(function (json) {
+      fetch(WORKER_BASE_URL + "/api/field-mapping").then(checkResponse).then(function (json) {
         settingsState.fieldMapping = json.data || {};
         if (state.page === "settings" && settingsState.tab === "field-mapping") renderSettingsContent();
-      }).catch(function () {});
+      }).catch(function (err) { logError("Larkフィールドマッピング取得", err.message); });
       return '<div class="note">読み込み中...</div>';
     }
     var html = "";
@@ -952,11 +1033,24 @@
       { type: "未知の参加ステータス", count: agg.unknownStatusCount, example: "参加状況が「参加確定/出席/遅刻/早退/欠席/拒否/学生キャンセル/応募中」以外の値" },
       { type: "学生JOIN失敗", count: joinFailCount, example: "応募データの学生IDが①UW学生リストに存在しない（コホート集計からは除外、通常の応募・参加実績には残す）" }
     ];
-    return '<div class="note">個人情報は表示しません。異常データのみ除外し、正常データは通常どおり集計します。</div>' +
+    var dataQualityHtml = '<div class="note">個人情報は表示しません。異常データのみ除外し、正常データは通常どおり集計します。</div>' +
       rows.map(function (r) {
         return '<div class="card" style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;"><div style="font-weight:800;font-size:12.5px;">' + esc(r.type) + '</div><div style="font-weight:800;color:' + (r.count > 0 ? "var(--red)" : "var(--green)") + ';">' + fmtInt(r.count) + "件</div></div>" +
           '<div class="note" style="margin:6px 0 0;">' + esc(r.example) + "</div></div>";
       }).join("");
+
+    var errorLogHtml = '<h2 style="margin-top:18px;">直近の通信エラー <span style="font-weight:400;color:var(--gray);font-size:11px;">（このブラウザを開いてから発生したもの、最大50件）</span></h2>';
+    if (errorLog.length === 0) {
+      errorLogHtml += '<div class="note" style="margin:0;">今のところエラーはありません。</div>';
+    } else {
+      errorLogHtml += '<button class="ghost" data-action="clear-error-log" style="margin-bottom:10px;">ログをクリア</button><table><thead><tr><th>時刻</th><th>操作</th><th>内容</th></tr></thead><tbody>' +
+        errorLog.map(function (e) {
+          var t = new Date(e.time);
+          var timeStr = t.getFullYear() + "/" + (t.getMonth() + 1) + "/" + t.getDate() + " " + String(t.getHours()).padStart(2, "0") + ":" + String(t.getMinutes()).padStart(2, "0") + ":" + String(t.getSeconds()).padStart(2, "0");
+          return "<tr><td>" + esc(timeStr) + "</td><td>" + esc(e.context) + "</td><td>" + esc(e.message) + "</td></tr>";
+        }).join("") + "</tbody></table>";
+    }
+    return dataQualityHtml + errorLogHtml;
   }
 
   function renderCostsTab() {
@@ -1011,6 +1105,8 @@
   });
 
   document.getElementById("settingsTabContent").addEventListener("click", function (e) {
+    var clearLogBtn = e.target.closest('[data-action="clear-error-log"]');
+    if (clearLogBtn) { errorLog.length = 0; renderSettingsContent(); return; }
     var addBtn = e.target.closest('[data-action="add-cost"]');
     if (addBtn) {
       var body = {
@@ -1023,12 +1119,12 @@
       if (!body.date || !body.amount) { showStatus("日付と金額は必須です。", "err"); return; }
       showStatus("追加中...", "loading");
       fetch(WORKER_BASE_URL + "/api/costs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-        .then(function (r) { return r.json(); })
+        .then(checkResponse)
         .then(function (json) {
           if (json.status === "success") loadAll();
-          else showStatus("エラー: " + (json.error || "不明なエラー"), "err");
+          else logError("コスト追加", json.error || "不明なエラー");
         })
-        .catch(function (err) { showStatus("通信エラー: " + err.message, "err"); });
+        .catch(function (err) { logError("コスト追加", err.message); });
       return;
     }
     var delBtn = e.target.closest("[data-del]");
@@ -1036,9 +1132,9 @@
       var id = delBtn.getAttribute("data-del");
       if (!confirm("この行を削除しますか？")) return;
       fetch(WORKER_BASE_URL + "/api/costs?id=" + encodeURIComponent(id), { method: "DELETE" })
-        .then(function (r) { return r.json(); })
+        .then(checkResponse)
         .then(function () { loadAll(); })
-        .catch(function (err) { showStatus("削除に失敗しました: " + err.message, "err"); });
+        .catch(function (err) { logError("コスト削除", err.message); });
     }
   });
 
@@ -1054,7 +1150,7 @@
     }
     var body = { monthKey: monthKey, cost: get("cost"), reg: get("reg"), concurrentPeople: get("concurrentPeople"), concurrentUnitPrice: get("concurrentUnitPrice") };
     fetch(WORKER_BASE_URL + "/api/targets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-      .then(function (r) { return r.json(); })
+      .then(checkResponse)
       .then(function () {
         state.targets[monthKey] = {
           cost: Number(body.cost) || 0, reg: Number(body.reg) || 0,
@@ -1062,20 +1158,24 @@
         };
         renderPage(); // Dashboardの達成率に反映
       })
-      .catch(function (err) { showStatus("目標の保存に失敗しました: " + err.message, "err"); });
+      .catch(function (err) { logError("目標の保存", err.message); });
   });
 
   function loadAll() {
     showStatus("読み込み中...", "loading");
     return Promise.all([
-      fetch(WORKER_BASE_URL + "/api/data").then(function (r) { return r.json(); }),
-      fetch(WORKER_BASE_URL + "/api/targets").then(function (r) { return r.json(); }).catch(function () { return { data: {} }; })
+      fetch(WORKER_BASE_URL + "/api/data").then(checkResponse),
+      fetch(WORKER_BASE_URL + "/api/targets").then(checkResponse).catch(function (err) { logError("目標値取得", err.message); return { data: {} }; })
     ]).then(function (results) {
       lastSources = results[0].sources || {};
       state.targets = results[1].data || {};
+      Object.keys(lastSources).forEach(function (key) {
+        var s = lastSources[key];
+        if (s.status === "error") logError("データ取得（" + key + "）", s.message || s.errorCode || "不明なエラー");
+      });
       renderDashboard(lastSources);
       clearStatus();
-    }).catch(function (err) { showStatus("/api/data の取得に失敗しました: " + err.message, "err"); });
+    }).catch(function (err) { logError("/api/data 取得", err.message); });
   }
 
   loadAll();
