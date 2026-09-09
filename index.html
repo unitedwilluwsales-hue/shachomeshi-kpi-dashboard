@@ -638,7 +638,7 @@
     return '<div class="note">応募・参加確定・当日参加は「その月に登録した学生」のその後全期間の累計です（発生月ではなく登録月で束ねています）。コストは登録月自身の投資コストをそのまま割り当てており、学生ごとの按分ではありません。</div>' + buildTableHtml(cols, rows);
   }
 
-  function renderAnnualPage(months, upToIdx) {
+  function renderAnnualPage(months, upToIdx, channelMode) {
     var cumApp = 0, cumConf = 0;
     var cumAppArr = [], cumConfArr = [];
     for (var i = 0; i < 12; i++) {
@@ -646,26 +646,35 @@
       cumAppArr.push(i <= upToIdx ? cumApp : null);
       cumConfArr.push(i <= upToIdx ? cumConf : null);
     }
-    var rows = [
-      { label: "費用", cells: monthCells(function (i) { return months[i].cost; }, true, null, upToIdx) },
+    var rows = [];
+    if (!channelMode) rows.push({ label: "費用", cells: monthCells(function (i) { return months[i].cost; }, true, null, upToIdx) });
+    rows.push(
       { label: "登録", cells: monthCells(function (i) { return months[i].regSet.size; }, false, null, upToIdx) },
       { label: "応募件数", cells: monthCells(function (i) { return months[i].appCount; }, false, null, upToIdx) },
       { label: "応募ユニーク", cells: monthCells(function (i) { return months[i].appSet.size; }, false, null, upToIdx) },
       { label: "参加確定件数", cells: monthCells(function (i) { return months[i].confCount; }, false, null, upToIdx) },
       { label: "参加確定ユニーク", cells: monthCells(function (i) { return months[i].confSet.size; }, false, null, upToIdx) },
       { label: "当日参加件数", cells: monthCells(function (i) { return months[i].attCount; }, false, null, upToIdx) },
-      { label: "当日参加ユニーク", cells: monthCells(function (i) { return months[i].attSet.size; }, false, null, upToIdx) },
-      { label: "登録CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].regSet.size; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
-      { label: "応募CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].appCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
-      { label: "参加確定CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].confCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
-      { label: "当日参加CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].attCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
-      { label: "最終CPA", cells: monthCells(function (i) { var c = months[i].cost, reg = months[i].regSet.size; return c > 0 && reg ? (c - months[i].concRevenue) / reg : null; }, true, null, upToIdx) },
+      { label: "当日参加ユニーク", cells: monthCells(function (i) { return months[i].attSet.size; }, false, null, upToIdx) }
+    );
+    if (!channelMode) {
+      rows.push(
+        { label: "登録CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].regSet.size; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+        { label: "応募CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].appCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+        { label: "参加確定CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].confCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+        { label: "当日参加CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].attCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+        { label: "最終CPA", cells: monthCells(function (i) { var c = months[i].cost, reg = months[i].regSet.size; return c > 0 && reg ? (c - months[i].concRevenue) / reg : null; }, true, null, upToIdx) }
+      );
+    }
+    rows.push(
       { label: "UU", cells: monthCells(function (i) { return months[i].regSet.size; }, false, null, upToIdx) },
       { label: "総応募（累計）", cells: cumAppArr.map(function (v) { return v == null ? "―" : fmtInt(v); }) },
-      { label: "総参加（累計）", cells: cumConfArr.map(function (v) { return v == null ? "―" : fmtInt(v); }) },
-      { label: "同時登録売上", cells: monthCells(function (i) { return months[i].concRevenue; }, true, null, upToIdx) }
-    ];
-    return '<div class="note">UUは暫定値として登録数と同値。総応募・総参加は年度開始（12月）からの累計。</div>' + buildTableHtml(MONTH_LABELS, rows);
+      { label: "総参加（累計）", cells: cumConfArr.map(function (v) { return v == null ? "―" : fmtInt(v); }) }
+    );
+    if (!channelMode) rows.push({ label: "同時登録売上", cells: monthCells(function (i) { return months[i].concRevenue; }, true, null, upToIdx) });
+    var note = "UUは暫定値として登録数と同値。総応募・総参加は年度開始（12月）からの累計。" +
+      (channelMode ? " 経由を選択中のため、費用・CPA・同時登録売上は経由に紐付けられず非表示です。" : "");
+    return '<div class="note">' + note + '</div>' + buildTableHtml(MONTH_LABELS, rows);
   }
 
   var MC_METRICS = [
@@ -696,9 +705,10 @@
     if (key === "finalCpa") return m.cost > 0 && m.regSet.size ? (m.cost - m.concRevenue) / m.regSet.size : null;
     return null;
   }
-  function renderMonthComparePage(months, upToIdx, centerIdx) {
+  function renderMonthComparePage(months, upToIdx, centerIdx, channelMode) {
     var idxs = [centerIdx - 1, centerIdx, centerIdx + 1];
     var colNames = ["前月", "当月", "翌月"];
+    var metrics = channelMode ? MC_METRICS.filter(function (m) { return !m.cpa && m.key !== "cost"; }) : MC_METRICS;
     var html = '<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);">';
     for (var c = 0; c < 3; c++) {
       var idx = idxs[c];
@@ -708,7 +718,7 @@
       if (!valid) {
         html += '<div class="note" style="margin:0;">' + (idx > upToIdx ? "まだ実績がありません" : "年度範囲外です") + "</div>";
       } else {
-        MC_METRICS.forEach(function (metric) {
+        metrics.forEach(function (metric) {
           var v = metricValue(months, idx, metric.key);
           var valueText = v == null ? "―" : (metric.isYen ? fmtYen(v) : fmtInt(v));
           var momHtml = "";
@@ -732,7 +742,9 @@
       html += "</div>";
     }
     html += "</div>";
-    return '<div class="note">対象月セレクターで選んだ月を「当月」として、前月・翌月と比較します。</div>' + html;
+    var note = "対象月セレクターで選んだ月を「当月」として、前月・翌月と比較します。" +
+      (channelMode ? " 経由を選択中のため、費用・CPAは経由に紐付けられず非表示です。" : "");
+    return '<div class="note">' + note + '</div>' + html;
   }
 
   function monthMeta(fiscalStartYear, idx) {
@@ -819,6 +831,12 @@
       counts[ch] = (counts[ch] || 0) + 1;
     });
     return Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
+  }
+  // 経由フィルタ用プルダウン（「全体」＋各経由）。年間管理・月間管理・経由別内訳で共用。
+  function channelFilterSelectHtml(id, channels, current) {
+    var opts = '<option value="__all__"' + (current === "__all__" ? " selected" : "") + '>全体（経由合計）</option>' +
+      channels.map(function (ch) { return '<option value="' + esc(ch) + '"' + (ch === current ? " selected" : "") + ">" + esc(ch) + "</option>"; }).join("");
+    return '<div class="row" style="max-width:320px;"><label>経由</label><select id="' + id + '">' + opts + "</select></div>";
   }
   // 選択した経由だけに絞った月別集計（登録は「経由」で直接、応募/参加確定/当日参加は
   // 学生ID経由でJOINして絞り込む。①UW学生リストに存在しない学生は仕様どおり除外）
@@ -931,7 +949,7 @@
     { key: "daily", label: "デイリー実績" },
     { key: "settings", label: "設定" }
   ];
-  var state = { page: "dashboard", centerIdx: null, targets: {}, channelFilter: null, channelChartMetrics: ["reg"] };
+  var state = { page: "dashboard", centerIdx: null, targets: {}, channelFilter: null, channelChartMetrics: ["reg"], annualChannelFilter: "__all__", monthCompareChannelFilter: "__all__" };
   var lastAgg = null; // { sources, fiscalStartYear, agg, upToIdx }
 
   function renderNav() {
@@ -952,9 +970,10 @@
   });
 
   document.getElementById("tablePageContent").addEventListener("change", function (e) {
-    if (e.target.id !== "channelFilterSelect") return;
-    state.channelFilter = e.target.value;
-    renderPage();
+    var id = e.target.id;
+    if (id === "channelFilterSelect") { state.channelFilter = e.target.value; renderPage(); }
+    else if (id === "annualChannelSelect") { state.annualChannelFilter = e.target.value; renderPage(); }
+    else if (id === "monthCompareChannelSelect") { state.monthCompareChannelFilter = e.target.value; renderPage(); }
   });
 
   function showEl(id, show) { document.getElementById(id).style.display = show ? "" : "none"; }
@@ -1009,9 +1028,21 @@
     } else if (state.page === "cohort") {
       document.getElementById("tablePageContent").innerHTML = renderCohortPage(lastAgg.sources, lastAgg.fiscalStartYear, months, upToIdx);
     } else if (state.page === "annual") {
-      document.getElementById("tablePageContent").innerHTML = renderAnnualPage(months, upToIdx);
+      var annualChannels = listChannels(lastAgg.sources);
+      var annualFiltered = state.annualChannelFilter !== "__all__" && annualChannels.indexOf(state.annualChannelFilter) !== -1;
+      if (!annualFiltered) state.annualChannelFilter = "__all__";
+      var annualMonths = annualFiltered ? aggregateByChannel(lastAgg.sources, lastAgg.fiscalStartYear, state.annualChannelFilter) : months;
+      document.getElementById("tablePageContent").innerHTML =
+        channelFilterSelectHtml("annualChannelSelect", annualChannels, state.annualChannelFilter) +
+        renderAnnualPage(annualMonths, upToIdx, annualFiltered);
     } else if (state.page === "month-compare") {
-      document.getElementById("tablePageContent").innerHTML = renderMonthComparePage(months, upToIdx, state.centerIdx);
+      var mcChannels = listChannels(lastAgg.sources);
+      var mcFiltered = state.monthCompareChannelFilter !== "__all__" && mcChannels.indexOf(state.monthCompareChannelFilter) !== -1;
+      if (!mcFiltered) state.monthCompareChannelFilter = "__all__";
+      var mcMonths = mcFiltered ? aggregateByChannel(lastAgg.sources, lastAgg.fiscalStartYear, state.monthCompareChannelFilter) : months;
+      document.getElementById("tablePageContent").innerHTML =
+        channelFilterSelectHtml("monthCompareChannelSelect", mcChannels, state.monthCompareChannelFilter) +
+        renderMonthComparePage(mcMonths, upToIdx, state.centerIdx, mcFiltered);
     } else if (state.page === "daily") {
       document.getElementById("tablePageContent").innerHTML = renderDailyPage(lastAgg.sources, lastAgg.fiscalStartYear, months, state.centerIdx);
     } else if (state.page === "channel") {
