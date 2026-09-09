@@ -1123,7 +1123,9 @@
     (lastSources.applications.data || []).forEach(function (r) { if (r.studentId && !registeredIds[r.studentId]) joinFailCount++; });
     var rows = [
       { type: "未知の参加ステータス", count: agg.unknownStatusCount, example: "参加状況が「参加確定/出席/遅刻/早退/欠席/拒否/学生キャンセル/応募中」以外の値" },
-      { type: "学生JOIN失敗", count: joinFailCount, example: "応募データの学生IDが①UW学生リストに存在しない（コホート集計からは除外、通常の応募・参加実績には残す）" }
+      { type: "学生JOIN失敗", count: joinFailCount, example: "応募データの学生IDが①UW学生リストに存在しない（コホート集計からは除外、通常の応募・参加実績には残す）" },
+      { type: "①UW学生リスト：学生ID欠落", count: (lastSources.uwStudents && lastSources.uwStudents.skipped) || 0, example: "アプリ登録UIDが空の行。Worker側で集計対象から除外済み（別人が1人にまとまるのを防ぐため）" },
+      { type: "⑥UW個社応募者：学生ID欠落", count: (lastSources.applications && lastSources.applications.skipped) || 0, example: "学生IDが空の行。Worker側で集計対象から除外済み" }
     ];
     var dataQualityHtml = '<div class="note">個人情報は表示しません。異常データのみ除外し、正常データは通常どおり集計します。</div>' +
       rows.map(function (r) {
