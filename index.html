@@ -554,7 +554,7 @@
       return "<th" + (opts.totalColIndex === i ? ' class="total-col"' : "") + ">" + esc(c) + "</th>";
     }).join("") + "</tr>";
     var tbody = rows.map(function (row) {
-      return "<tr" + (row.isRate ? ' class="rate-row"' : "") + "><td>" + esc(row.label) + "</td>" +
+      return "<tr" + (row.isRate ? ' class="rate-row"' : row.isTotal ? ' style="font-weight:800;background:var(--accent-tint);"' : "") + "><td>" + esc(row.label) + "</td>" +
         row.cells.map(function (c, i) {
           return "<td" + (opts.totalColIndex === i ? ' class="total-col"' : "") + ">" + esc(c) + "</td>";
         }).join("") + "</tr>";
@@ -833,6 +833,45 @@
     return '<div class="note">' + meta.year + "年" + meta.month + "月の日別実績（土日はグレー背景。祝日判定は未実装）。コスト・同時登録は月間実績を日数で均等割りした参考値です。</div>" + table;
   }
 
+  function renderChannelPage(months, upToIdx) {
+    var totalByChannel = {};
+    for (var i = 0; i <= upToIdx; i++) {
+      Object.keys(months[i].channelCounts).forEach(function (ch) {
+        totalByChannel[ch] = (totalByChannel[ch] || 0) + months[i].channelCounts[ch];
+      });
+    }
+    var channels = Object.keys(totalByChannel).sort(function (a, b) { return totalByChannel[b] - totalByChannel[a]; });
+    if (channels.length === 0) {
+      return '<div class="note">データがありません。</div>';
+    }
+    var cols = MONTH_LABELS.concat(["合計"]);
+    var rows = channels.map(function (ch) {
+      var cells = [];
+      var total = 0;
+      for (var i = 0; i < 12; i++) {
+        if (i > upToIdx) { cells.push("―"); continue; }
+        var v = months[i].channelCounts[ch] || 0;
+        total += v;
+        cells.push(fmtInt(v));
+      }
+      cells.push(fmtInt(total));
+      return { label: ch, cells: cells };
+    });
+    // 合計行
+    var totalCells = [];
+    var grandTotal = 0;
+    for (var i = 0; i < 12; i++) {
+      if (i > upToIdx) { totalCells.push("―"); continue; }
+      var monthTotal = Object.keys(months[i].channelCounts).reduce(function (a, ch) { return a + months[i].channelCounts[ch]; }, 0);
+      grandTotal += monthTotal;
+      totalCells.push(fmtInt(monthTotal));
+    }
+    totalCells.push(fmtInt(grandTotal));
+    rows.push({ label: "合計", cells: totalCells, isTotal: true });
+    return '<div class="note">登録者数を「経由」フィールドの値ごと・月ごとに集計しています。実データの値をそのまま使っているため、表記ゆれ・テスト値（DRAFT等）も含みます。</div>' +
+      buildTableHtml(cols, rows, { totalColIndex: 12 });
+  }
+
   // ---- ページナビゲーション ----
   var NAV_PAGES = [
     { key: "dashboard", label: "Dashboard" },
@@ -842,6 +881,7 @@
     { key: "annual", label: "年間管理" },
     { key: "month-compare", label: "月間管理" },
     { key: "daily", label: "デイリー実績" },
+    { key: "channel", label: "経由別内訳" },
     { key: "settings", label: "設定" }
   ];
   var state = { page: "dashboard", centerIdx: null, targets: {} };
@@ -869,7 +909,7 @@
   var NEEDS_SELECTOR = { "month-compare": true, daily: true };
   var PAGE_TITLES = {
     "monthly-actual": "当月発生ベース", roi: "集客ROI", cohort: "登録月ベース（コホート）",
-    annual: "年間管理", "month-compare": "月間管理", daily: "デイリー実績"
+    annual: "年間管理", "month-compare": "月間管理", daily: "デイリー実績", channel: "経由別内訳"
   };
 
   function renderPage() {
@@ -923,6 +963,8 @@
       document.getElementById("tablePageContent").innerHTML = renderMonthComparePage(months, upToIdx, state.centerIdx);
     } else if (state.page === "daily") {
       document.getElementById("tablePageContent").innerHTML = renderDailyPage(lastAgg.sources, lastAgg.fiscalStartYear, months, state.centerIdx);
+    } else if (state.page === "channel") {
+      document.getElementById("tablePageContent").innerHTML = renderChannelPage(months, upToIdx);
     }
   }
 
