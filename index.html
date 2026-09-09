@@ -1,0 +1,1085 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>社長メシ KPI Dashboard</title>
+<style>
+  :root{
+    --bg:#fafafa; --surface:#fff; --text:#1a1a1a; --gray:#767676; --border:#e3e0dc;
+    --accent:#d9631e; --accent-tint:#fdf0e6; --red:#b3261e; --green:#1e7a3d;
+    --green-bg:#e9f7ee; --red-bg:#fdeceb;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;background:var(--bg);color:var(--text);padding:24px;}
+  h1{font-size:19px;color:var(--accent);margin:0 0 4px;}
+  h2{font-size:14px;margin:0 0 10px;}
+  .sub{font-size:12px;color:var(--gray);margin-bottom:20px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px;max-width:960px;}
+  .row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  label{font-size:12px;color:var(--gray);font-weight:700;width:120px;flex-shrink:0;}
+  input,select{border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px;flex:1;font-family:inherit;}
+  button{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;}
+  button:hover{opacity:.9;}
+  button.ghost{background:transparent;color:var(--red);border:1px solid var(--red);padding:4px 10px;font-size:11px;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;}
+  th{color:var(--gray);font-weight:700;}
+  .status{font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:12px;max-width:960px;}
+  .status.ok{background:var(--green-bg);color:var(--green);}
+  .status.err{background:var(--red-bg);color:var(--red);}
+  .status.loading{background:#f2f2f2;color:var(--gray);}
+  .switch-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .badge{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;background:var(--accent-tint);color:var(--accent);}
+  .note{font-size:11px;color:var(--gray);margin-bottom:10px;}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+  .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+  .kpi-label{font-size:11px;color:var(--gray);font-weight:700;}
+  .kpi-value{font-size:22px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;margin-top:4px;}
+  .kpi-value.dim{color:var(--gray);font-size:16px;}
+
+  .cost-row{display:flex;gap:12px;flex-wrap:wrap;}
+  .cost-card{flex:1;min-width:130px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
+  .cost-card.total{background:var(--accent-tint);}
+  .cost-label{font-size:11px;color:var(--gray);font-weight:700;}
+  .cost-value{font-size:16px;font-weight:800;margin-top:4px;}
+
+  .toggle-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+  .toggle-btn{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:5px 12px;font-size:11.5px;font-weight:700;color:var(--text);cursor:pointer;}
+  .toggle-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+
+  .chart-svg{width:100%;height:auto;display:block;}
+
+  .funnel{display:flex;gap:0;}
+  .funnel-stage{flex:1;text-align:center;}
+  .funnel-box{background:var(--accent-tint);border:1px solid var(--accent);border-radius:10px;padding:14px 6px;margin:0 4px;}
+  .funnel-name{font-size:11px;color:var(--gray);font-weight:700;}
+  .funnel-num{font-size:19px;font-weight:800;color:var(--accent);margin-top:4px;}
+  .funnel-arrow{flex:0 0 60px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--gray);font-weight:700;}
+
+  .app{display:flex;align-items:flex-start;gap:24px;}
+  .sidebar{width:220px;flex-shrink:0;position:sticky;top:24px;}
+  .sidebar .card{padding:10px;}
+  .main{flex:1;min-width:0;}
+
+  .nav-row{display:flex;flex-direction:column;gap:2px;}
+  .nav-btn{display:block;width:100%;text-align:left;border:none;border-left:3px solid transparent;background:transparent;border-radius:8px;padding:10px 12px;font-size:12.5px;font-weight:700;color:var(--text);cursor:pointer;}
+  .nav-btn:hover{background:var(--bg);}
+  .nav-btn.active{background:var(--accent-tint);border-left-color:var(--accent);color:var(--accent);}
+
+  .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;max-height:70vh;}
+  table.data-table{width:auto;min-width:100%;border-collapse:collapse;font-size:12px;}
+  table.data-table th,table.data-table td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);}
+  table.data-table th:first-child,table.data-table td:first-child{position:sticky;left:0;background:var(--surface);text-align:left;font-weight:700;z-index:1;border-right:1px solid var(--border);}
+  table.data-table thead th{position:sticky;top:0;background:var(--surface);z-index:2;font-weight:800;border-bottom:2px solid var(--border);}
+  table.data-table thead th:first-child{z-index:3;}
+  table.data-table tr.rate-row td{color:var(--gray);font-size:11px;}
+  table.data-table td.total-col,table.data-table th.total-col{background:var(--accent-tint);font-weight:800;}
+
+  .admin-bar{display:flex;align-items:center;gap:14px;}
+  .admin-bar-text{display:flex;flex-direction:column;gap:2px;}
+  .admin-bar-label{font-size:13px;font-weight:800;}
+  .admin-bar-desc{font-size:11px;color:var(--gray);}
+  .switch{position:relative;display:inline-block;width:38px;height:21px;flex-shrink:0;}
+  .switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;z-index:1;}
+  .switch-track{position:absolute;inset:0;background:var(--border);border-radius:999px;transition:background .15s;}
+  .switch-thumb{position:absolute;top:2px;left:2px;width:17px;height:17px;background:#fff;border-radius:50%;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,.25);}
+  .switch input:checked + .switch-track{background:var(--accent);}
+  .switch input:checked + .switch-track + .switch-thumb{left:19px;}
+</style>
+</head>
+<body>
+
+<h1>社長メシ KPI Dashboard <span class="badge">実データ接続版</span></h1>
+<div class="sub">Worker: <code id="workerUrlLabel"></code></div>
+
+<div id="statusArea"></div>
+
+<div class="app">
+<div class="sidebar">
+  <div class="card">
+    <div class="nav-row" id="navRow"></div>
+  </div>
+</div>
+<div class="main">
+
+<div class="card" id="tablePageCard" style="display:none;">
+  <h2 id="tablePageTitle"></h2>
+  <div class="row" id="monthSelectorRow" style="display:none;max-width:320px;">
+    <label>対象月</label>
+    <select id="monthSelector"></select>
+  </div>
+  <div id="tablePageContent"></div>
+</div>
+
+<div class="card" id="dashboardCard" style="display:none;">
+  <h2>年度サマリー <span id="fiscalYearLabel" style="color:var(--gray);font-weight:400;"></span></h2>
+  <div class="note" id="dashboardNote"></div>
+  <div class="kpi-grid" id="kpiGrid"></div>
+</div>
+
+<div class="card" id="costSummaryCard" style="display:none;">
+  <h2>コスト内訳</h2>
+  <div class="cost-row" id="costRow"></div>
+</div>
+
+<div class="card" id="chartCard" style="display:none;">
+  <h2>月次推移</h2>
+  <div class="toggle-row" id="metricButtons"></div>
+  <svg class="chart-svg" id="chartSvg" viewBox="0 0 1000 260"></svg>
+</div>
+
+<div class="card" id="funnelCard" style="display:none;">
+  <h2>ファネル（年度累計・ユニーク）</h2>
+  <div class="funnel" id="funnelRow"></div>
+</div>
+
+<div id="settingsCard" style="display:none;">
+
+<div class="card">
+  <h2>設定</h2>
+  <div class="admin-bar">
+    <label class="switch">
+      <input type="checkbox" id="adminToggle">
+      <span class="switch-track"></span>
+      <span class="switch-thumb"></span>
+    </label>
+    <div class="admin-bar-text">
+      <div class="admin-bar-label" id="adminBarLabel">管理者モード：OFF（閲覧のみ）</div>
+      <div class="admin-bar-desc">画面を再読み込みすると自動的にOFFへ戻ります。初期版では認証なし。</div>
+    </div>
+  </div>
+  <div class="toggle-row" id="settingsTabRow" style="margin:14px 0 0;"></div>
+</div>
+
+<div class="card" id="settingsTabContent"></div>
+
+</div>
+
+</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ローカル開発中は wrangler dev の実際のポートに合わせて変更してください。
+  // 本番デプロイ後は Cloudflare Workers の本番URLに差し替えます。
+  var WORKER_BASE_URL = "http://127.0.0.1:8791";
+  document.getElementById("workerUrlLabel").textContent = WORKER_BASE_URL;
+
+  var CATEGORY_LABEL = { send: "送客費", ad: "広告費", other: "その他" };
+  var MONTH_LABELS = ["12月", "1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月"];
+
+  // ---- 表示ユーティリティ ----
+  function fmtYen(n) { return "¥" + Math.round(n).toLocaleString("ja-JP"); }
+  function fmtInt(n) { return Math.round(n).toLocaleString("ja-JP"); }
+  function fmtPct(n) { return (n * 100).toFixed(1) + "%"; }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  function showStatus(msg, kind) {
+    document.getElementById("statusArea").innerHTML = '<div class="status ' + kind + '">' + esc(msg) + "</div>";
+  }
+  function clearStatus() { document.getElementById("statusArea").innerHTML = ""; }
+
+  // ---- 日付処理（Asia/Tokyo固定。UTCのまま月日判定しない） ----
+  // Larkのタイムスタンプ(UTC ms)にJSTオフセットを足してから getUTC* で読むことで、
+  // 閲覧者のブラウザのタイムゾーン設定に関係なく常にJSTとして扱う。
+  function jstParts(ts) {
+    var d = new Date(ts + 9 * 3600 * 1000);
+    return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, day: d.getUTCDate() };
+  }
+  // 年度: 12/1〜翌11/30。期首年が年度名。返り値: 0=12月...11=11月 のインデックス。
+  function fiscalIndex(ts, fiscalStartYear) {
+    var p = jstParts(ts);
+    var y = p.m === 12 ? p.y : p.y - 1; // このタイムスタンプが属する年度の期首年
+    if (y !== fiscalStartYear) return null; // 対象年度の範囲外
+    return p.m === 12 ? 0 : p.m;
+  }
+  function currentFiscalStartYear() {
+    var now = new Date();
+    var jst = jstParts(now.getTime() + now.getTimezoneOffset() * 60000 * 0); // ローカルnowは既にUTCms
+    // new Date().getTime() はUTC msなのでそのままjstPartsに渡せる
+    var p = jstParts(now.getTime());
+    return p.m === 12 ? p.y : p.y - 1;
+  }
+  // ルックアップ型フィールド（配列で返ってくる）を数値として正規化する。
+  // 単一要素前提だが、複数要素の場合は保険として合計する。
+  function numFromLookup(v) {
+    if (Array.isArray(v)) return v.reduce(function (a, b) { return a + (Number(b) || 0); }, 0);
+    return Number(v) || 0;
+  }
+  function firstFromLookup(v) { return Array.isArray(v) ? v[0] : v; }
+
+  // 仕様書24節のステータス正規化
+  var CONFIRMED_STATUSES = ["参加確定", "出席", "遅刻", "早退", "欠席"];
+  var ATTENDED_STATUSES = ["出席", "遅刻", "早退"];
+  var KNOWN_STATUSES = CONFIRMED_STATUSES.concat(["拒否", "学生キャンセル", "応募中"]);
+
+  function emptyMonth() {
+    return {
+      regSet: new Set(),
+      appCount: 0, appSet: new Set(),
+      confCount: 0, confSet: new Set(),
+      attCount: 0, attSet: new Set(),
+      cost: 0, costBreakdown: { send: 0, ad: 0, other: 0 },
+      concPeople: 0, concPeopleNet: 0, concRevenue: 0
+    };
+  }
+
+  // Worker生データ(JOIN前)から、年度内12ヶ月分の集計を作る
+  function aggregate(sources, fiscalStartYear) {
+    var months = [];
+    for (var i = 0; i < 12; i++) months.push(emptyMonth());
+    var unknownStatusCount = 0;
+
+    (sources.uwStudents.data || []).forEach(function (r) {
+      if (!r.registeredAt) return;
+      var idx = fiscalIndex(r.registeredAt, fiscalStartYear);
+      if (idx == null) return;
+      months[idx].regSet.add(r.studentId);
+    });
+
+    (sources.applications.data || []).forEach(function (r) {
+      if (r.appliedAt) {
+        var ai = fiscalIndex(r.appliedAt, fiscalStartYear);
+        if (ai != null) { months[ai].appCount++; months[ai].appSet.add(r.studentId); }
+      }
+      if (r.status && KNOWN_STATUSES.indexOf(r.status) === -1) unknownStatusCount++;
+      var isConfirmed = CONFIRMED_STATUSES.indexOf(r.status) !== -1;
+      var isAttended = ATTENDED_STATUSES.indexOf(r.status) !== -1;
+      if (isConfirmed && r.confirmedAt) {
+        var ci = fiscalIndex(r.confirmedAt, fiscalStartYear);
+        if (ci != null) { months[ci].confCount++; months[ci].confSet.add(r.studentId); }
+      }
+      if (isAttended && r.eventDate) {
+        var evi = fiscalIndex(r.eventDate, fiscalStartYear);
+        if (evi != null) { months[evi].attCount++; months[evi].attSet.add(r.studentId); }
+      }
+    });
+
+    (sources.costs.data || []).forEach(function (r) {
+      if (!r.date) return;
+      var ts = new Date(r.date + "T00:00:00+09:00").getTime();
+      var idx = fiscalIndex(ts, fiscalStartYear);
+      if (idx == null) return;
+      var amt = Number(r.amount) || 0;
+      months[idx].cost += amt;
+      if (months[idx].costBreakdown[r.category] != null) months[idx].costBreakdown[r.category] += amt;
+    });
+
+    // 同時登録：開始日〜終了日の日数按分。月またぎは日数で分ける（仕様書36節）。
+    (sources.simultaneousRegistrations.data || []).forEach(function (r) {
+      var start = firstFromLookup(r.startAt) || r.startAt;
+      var end = firstFromLookup(r.endAt) || r.endAt || start;
+      if (!start) return;
+      if (end < start) return; // 異常値（終了<開始）は除外
+      var people = numFromLookup(r.people);
+      var peopleNet = numFromLookup(r.peopleNet);
+      var revenue = numFromLookup(r.revenue);
+      var dayMs = 24 * 3600 * 1000;
+      var days = Math.max(1, Math.round((end - start) / dayMs) + 1);
+      for (var d = 0; d < days; d++) {
+        var ts2 = start + d * dayMs;
+        var idx2 = fiscalIndex(ts2, fiscalStartYear);
+        if (idx2 == null) continue;
+        months[idx2].concPeople += people / days;
+        months[idx2].concPeopleNet += peopleNet / days;
+        months[idx2].concRevenue += revenue / days;
+      }
+    });
+
+    return { months: months, unknownStatusCount: unknownStatusCount };
+  }
+
+  // 登録月コホート集計：学生の「登録月」を基準に、その後の全期間の応募・参加確定・当日参加を
+  // 累計する（発生月ではなく登録月で束ねる点が当月発生ベースと違う）。
+  function buildCohortAgg(sources, fiscalStartYear) {
+    var regMonthOf = {};
+    (sources.uwStudents.data || []).forEach(function (r) {
+      if (!r.registeredAt) return;
+      var idx = fiscalIndex(r.registeredAt, fiscalStartYear);
+      if (idx != null) regMonthOf[r.studentId] = idx;
+    });
+    var cohorts = [];
+    for (var i = 0; i < 12; i++) cohorts.push({ reg: 0, appCount: 0, appSet: new Set(), confCount: 0, confSet: new Set(), attCount: 0, attSet: new Set() });
+    Object.keys(regMonthOf).forEach(function (sid) { cohorts[regMonthOf[sid]].reg++; });
+    (sources.applications.data || []).forEach(function (r) {
+      var idx = regMonthOf[r.studentId];
+      if (idx == null) return; // 学生JOIN失敗（登録データに無い）は仕様書どおりコホートから除外
+      cohorts[idx].appCount++; cohorts[idx].appSet.add(r.studentId);
+      if (CONFIRMED_STATUSES.indexOf(r.status) !== -1) { cohorts[idx].confCount++; cohorts[idx].confSet.add(r.studentId); }
+      if (ATTENDED_STATUSES.indexOf(r.status) !== -1) { cohorts[idx].attCount++; cohorts[idx].attSet.add(r.studentId); }
+    });
+    return cohorts;
+  }
+
+  function totals(months, upToIdx) {
+    var t = { reg: 0, appCount: 0, appUnique: new Set(), confCount: 0, confUnique: new Set(),
+      attCount: 0, attUnique: new Set(), cost: 0, concRevenue: 0 };
+    for (var i = 0; i <= upToIdx; i++) {
+      var m = months[i];
+      t.reg += m.regSet.size;
+      t.appCount += m.appCount;
+      m.appSet.forEach(function (v) { t.appUnique.add(v); });
+      t.confCount += m.confCount;
+      m.confSet.forEach(function (v) { t.confUnique.add(v); });
+      t.attCount += m.attCount;
+      m.attSet.forEach(function (v) { t.attUnique.add(v); });
+      t.cost += m.cost;
+      t.concRevenue += m.concRevenue;
+    }
+    return t;
+  }
+
+  function safeDiv(a, b) { return b ? a / b : null; }
+
+  // 月別KPI目標（settings画面で入力・KV保存）を、表示対象期間で合算する
+  function computeTargetTotals(targets, fiscalStartYear, upToIdx) {
+    var tt = { cost: 0, reg: 0, concRevenue: 0 };
+    for (var i = 0; i <= upToIdx; i++) {
+      var meta = monthMeta(fiscalStartYear, i);
+      var key = meta.year + "-" + String(meta.month).padStart(2, "0");
+      var tm = targets[key];
+      if (!tm) continue;
+      tt.cost += tm.cost || 0;
+      tt.reg += tm.reg || 0;
+      tt.concRevenue += (tm.concurrentPeople || 0) * (tm.concurrentUnitPrice || 0);
+    }
+    return tt;
+  }
+
+  // ---- 描画 ----
+  var chartState = { metric: "reg" };
+
+  function renderKpis(t, tt) {
+    // cost=0は「無料で獲得できた」ではなく「まだコストが未入力」を意味するため、
+    // その場合はCPA系を全て「―」にする（0円やマイナスのCPAを誤解を招く形で出さない）。
+    var hasCost = t.cost > 0;
+    var cpaReg = hasCost ? safeDiv(t.cost, t.reg) : null;
+    var cpaApp = hasCost ? safeDiv(t.cost, t.appCount) : null;
+    var cpaConf = hasCost ? safeDiv(t.cost, t.confCount) : null;
+    var cpaAtt = hasCost ? safeDiv(t.cost, t.attCount) : null;
+    var finalCpa = hasCost && t.reg ? (t.cost - t.concRevenue) / t.reg : null;
+
+    function achRatioColor(ratio) { return ratio >= 1 ? "var(--green)" : ratio >= 0.8 ? "#b8860b" : "var(--red)"; }
+    function subCount(actual, target) {
+      if (!target) return "";
+      var ratio = actual / target;
+      return '<div style="font-size:10.5px;font-weight:800;color:' + achRatioColor(ratio) + ';margin-top:2px;">目標 ' + fmtInt(target) + "（" + (ratio * 100).toFixed(0) + "%）</div>";
+    }
+    function subCpa(actual, target) {
+      if (actual == null || !target) return "";
+      var ratio = target / actual;
+      return '<div style="font-size:10.5px;font-weight:800;color:' + achRatioColor(ratio) + ';margin-top:2px;">目標 ' + fmtYen(target) + "（" + (ratio * 100).toFixed(0) + "%）</div>";
+    }
+    var costSub = tt.cost ? '<div style="font-size:10.5px;color:var(--gray);margin-top:2px;">予算 ' + fmtYen(tt.cost) + "（" + ((t.cost / tt.cost) * 100).toFixed(0) + "%消化）</div>" : "";
+    var cpaRegTarget = tt.reg ? tt.cost / tt.reg : 0;
+    var finalCpaTarget = tt.reg ? (tt.cost - tt.concRevenue) / tt.reg : 0;
+
+    var cards = [
+      { label: "費用", value: fmtYen(t.cost), sub: costSub },
+      { label: "登録数", value: fmtInt(t.reg), sub: subCount(t.reg, tt.reg) },
+      { label: "応募数（件数）", value: fmtInt(t.appCount) },
+      { label: "参加確定数（件数）", value: fmtInt(t.confCount) },
+      { label: "当日参加数（件数）", value: fmtInt(t.attCount) },
+      { label: "登録CPA", value: cpaReg == null ? "―" : fmtYen(cpaReg), sub: subCpa(cpaReg, cpaRegTarget) },
+      { label: "応募CPA", value: cpaApp == null ? "―" : fmtYen(cpaApp) },
+      { label: "参加確定CPA", value: cpaConf == null ? "―" : fmtYen(cpaConf) },
+      { label: "当日参加CPA", value: cpaAtt == null ? "―" : fmtYen(cpaAtt) },
+      { label: "最終CPA", value: finalCpa == null ? "―" : fmtYen(finalCpa), sub: subCpa(finalCpa, finalCpaTarget) }
+    ];
+    document.getElementById("kpiGrid").innerHTML = cards.map(function (c) {
+      var dim = c.value === "―" ? " dim" : "";
+      return '<div class="kpi-card"><div class="kpi-label">' + esc(c.label) + '</div><div class="kpi-value' + dim + '">' + esc(c.value) + "</div>" + (c.sub || "") + "</div>";
+    }).join("");
+  }
+
+  function renderCostRow(t) {
+    document.getElementById("costRow").innerHTML =
+      '<div class="cost-card"><div class="cost-label">集客コスト計</div><div class="cost-value">' + fmtYen(t.cost) + '</div></div>' +
+      '<div class="cost-card"><div class="cost-label">同時登録売上</div><div class="cost-value">' + fmtYen(t.concRevenue) + '</div></div>' +
+      '<div class="cost-card total"><div class="cost-label">最終コスト（費用－同時登録売上）</div><div class="cost-value">' + fmtYen(t.cost - t.concRevenue) + '</div></div>';
+  }
+
+  function renderFunnel(t) {
+    var stages = [
+      { name: "登録", value: t.reg },
+      { name: "応募", value: t.appUnique.size },
+      { name: "参加確定", value: t.confUnique.size },
+      { name: "当日参加", value: t.attUnique.size }
+    ];
+    var html = "";
+    for (var i = 0; i < stages.length; i++) {
+      html += '<div class="funnel-stage"><div class="funnel-box"><div class="funnel-name">' + esc(stages[i].name) + '</div><div class="funnel-num">' + fmtInt(stages[i].value) + "</div></div></div>";
+      if (i < stages.length - 1) {
+        var rate = stages[i].value ? stages[i + 1].value / stages[i].value : 0;
+        html += '<div class="funnel-arrow">→<br>' + fmtPct(rate) + "</div>";
+      }
+    }
+    document.getElementById("funnelRow").innerHTML = html;
+  }
+
+  var METRIC_DEFS = [
+    { key: "reg", label: "登録数" }, { key: "appCount", label: "応募（件数）" },
+    { key: "confCount", label: "参加確定（件数）" }, { key: "attCount", label: "当日参加（件数）" },
+    { key: "cost", label: "集客コスト" }
+  ];
+
+  function renderChart(months, upToIdx) {
+    document.getElementById("metricButtons").innerHTML = METRIC_DEFS.map(function (m) {
+      return '<button class="toggle-btn' + (chartState.metric === m.key ? " active" : "") + '" data-metric="' + m.key + '">' + esc(m.label) + "</button>";
+    }).join("");
+
+    var series = [];
+    for (var i = 0; i <= upToIdx; i++) {
+      var m = months[i];
+      var v = chartState.metric === "reg" ? m.regSet.size
+        : chartState.metric === "appCount" ? m.appCount
+        : chartState.metric === "confCount" ? m.confCount
+        : chartState.metric === "attCount" ? m.attCount
+        : m.cost;
+      series.push(v);
+    }
+    var max = Math.max.apply(null, series.concat([1])) * 1.15;
+    var x0 = 50, y0 = 20, plotW = 920, plotH = 200;
+    var xStep = series.length > 1 ? plotW / (series.length - 1) : 0;
+    var pts = series.map(function (v, i) {
+      var x = x0 + i * xStep;
+      var y = y0 + plotH - (v / max) * plotH;
+      return { x: x, y: y, v: v, label: MONTH_LABELS[i] };
+    });
+    var pointsAttr = pts.map(function (p) { return p.x.toFixed(1) + "," + p.y.toFixed(1); }).join(" ");
+    var dots = pts.map(function (p) {
+      return '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="4" fill="#d9631e" stroke="#fff" stroke-width="1.5"><title>' + esc(p.label) + ": " + fmtInt(p.v) + "</title></circle>";
+    }).join("");
+    var labels = pts.map(function (p) {
+      return '<text x="' + p.x.toFixed(1) + '" y="248" font-size="11" fill="#767676" text-anchor="middle">' + esc(p.label) + "</text>";
+    }).join("");
+    document.getElementById("chartSvg").innerHTML =
+      '<polyline points="' + pointsAttr + '" fill="none" stroke="#d9631e" stroke-width="2.5"/>' + dots + labels;
+  }
+
+  document.getElementById("metricButtons").addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-metric]");
+    if (!btn) return;
+    chartState.metric = btn.getAttribute("data-metric");
+    if (window.__lastAgg) renderChart(window.__lastAgg.months, window.__lastAgg.upToIdx);
+  });
+
+  // ---- 表形式ページの共通部品 ----
+  function buildTableHtml(colLabels, rows, opts) {
+    opts = opts || {};
+    var thead = "<tr><th></th>" + colLabels.map(function (c, i) {
+      return "<th" + (opts.totalColIndex === i ? ' class="total-col"' : "") + ">" + esc(c) + "</th>";
+    }).join("") + "</tr>";
+    var tbody = rows.map(function (row) {
+      return "<tr" + (row.isRate ? ' class="rate-row"' : "") + "><td>" + esc(row.label) + "</td>" +
+        row.cells.map(function (c, i) {
+          return "<td" + (opts.totalColIndex === i ? ' class="total-col"' : "") + ">" + esc(c) + "</td>";
+        }).join("") + "</tr>";
+    }).join("");
+    return '<div class="table-wrap"><table class="data-table"><thead>' + thead + "</thead><tbody>" + tbody + "</tbody></table></div>";
+  }
+  function monthCells(fn, isYen, decimals, upToIdx) {
+    var cells = [];
+    for (var i = 0; i < 12; i++) {
+      if (i > upToIdx) { cells.push("―"); continue; }
+      var v = fn(i);
+      cells.push(v == null ? "―" : (isYen ? fmtYen(v) : (decimals ? v.toFixed(decimals) : fmtInt(v))));
+    }
+    return cells;
+  }
+  function rateCells(fn, upToIdx) {
+    var cells = [];
+    for (var i = 0; i < 12; i++) {
+      if (i > upToIdx) { cells.push("―"); continue; }
+      var v = fn(i);
+      cells.push(v == null ? "―" : fmtPct(v));
+    }
+    return cells;
+  }
+
+  function renderMonthlyActualPage(months, upToIdx) {
+    var rows = [
+      { label: "登録数", cells: monthCells(function (i) { return months[i].regSet.size; }, false, null, upToIdx) },
+      { label: "平均応募数", cells: monthCells(function (i) { return months[i].regSet.size ? months[i].appCount / months[i].regSet.size : 0; }, false, 1, upToIdx) },
+      { label: "応募件数", cells: monthCells(function (i) { return months[i].appCount; }, false, null, upToIdx) },
+      { label: "応募ユニーク", cells: monthCells(function (i) { return months[i].appSet.size; }, false, null, upToIdx) },
+      { label: "参加確定件数", cells: monthCells(function (i) { return months[i].confCount; }, false, null, upToIdx) },
+      { label: "参加確定ユニーク", cells: monthCells(function (i) { return months[i].confSet.size; }, false, null, upToIdx) },
+      { label: "当日参加件数", cells: monthCells(function (i) { return months[i].attCount; }, false, null, upToIdx) },
+      { label: "当日参加ユニーク", cells: monthCells(function (i) { return months[i].attSet.size; }, false, null, upToIdx) },
+      { label: "投資コスト", cells: monthCells(function (i) { return months[i].cost; }, true, null, upToIdx) },
+      { label: "登録CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].regSet.size; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+      { label: "応募CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].appCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+      { label: "参加確定CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].confCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+      { label: "当日参加CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].attCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+      { label: "同時登録人数", cells: monthCells(function (i) { return months[i].concPeople; }, false, 1, upToIdx) },
+      { label: "同時登録売上", cells: monthCells(function (i) { return months[i].concRevenue; }, true, null, upToIdx) },
+      { label: "最終CPA", cells: monthCells(function (i) { var c = months[i].cost, reg = months[i].regSet.size; return c > 0 && reg ? (c - months[i].concRevenue) / reg : null; }, true, null, upToIdx) },
+      { label: "登録→応募率", isRate: true, cells: rateCells(function (i) { return months[i].regSet.size ? months[i].appSet.size / months[i].regSet.size : 0; }, upToIdx) },
+      { label: "登録→参加確定率", isRate: true, cells: rateCells(function (i) { return months[i].regSet.size ? months[i].confSet.size / months[i].regSet.size : 0; }, upToIdx) },
+      { label: "応募→参加確定率", isRate: true, cells: rateCells(function (i) { return months[i].appSet.size ? months[i].confSet.size / months[i].appSet.size : 0; }, upToIdx) },
+      { label: "登録→当日参加率", isRate: true, cells: rateCells(function (i) { return months[i].regSet.size ? months[i].attSet.size / months[i].regSet.size : 0; }, upToIdx) },
+      { label: "参加確定→当日参加率", isRate: true, cells: rateCells(function (i) { return months[i].confSet.size ? months[i].attSet.size / months[i].confSet.size : 0; }, upToIdx) }
+    ];
+    return '<div class="note">掲載数はイベントマスタ未接続のため省略しています。表示対象の月より先は実績がまだ無いため「―」表示です。</div>' + buildTableHtml(MONTH_LABELS, rows);
+  }
+
+  function renderRoiPage(months, upToIdx) {
+    var cols = MONTH_LABELS.concat(["合計"]);
+    function rowWithTotal(label, fn, isCount) {
+      var cells = [], total = 0;
+      for (var i = 0; i < 12; i++) {
+        if (i > upToIdx) { cells.push("―"); continue; }
+        var v = fn(i); total += v;
+        cells.push(isCount ? fmtInt(v) : fmtYen(v));
+      }
+      cells.push(isCount ? fmtInt(total) : fmtYen(total));
+      return { label: label, cells: cells };
+    }
+    var rows = [
+      rowWithTotal("送客費", function (i) { return months[i].costBreakdown.send; }),
+      rowWithTotal("広告費", function (i) { return months[i].costBreakdown.ad; }),
+      rowWithTotal("その他", function (i) { return months[i].costBreakdown.other; }),
+      rowWithTotal("集客コスト計", function (i) { return months[i].cost; }),
+      rowWithTotal("同時登録売上", function (i) { return months[i].concRevenue; }),
+      rowWithTotal("登録数", function (i) { return months[i].regSet.size; }, true)
+    ];
+    var cpaRegCells = [], finalCpaCells = [];
+    for (var i = 0; i < 12; i++) {
+      if (i > upToIdx) { cpaRegCells.push("―"); finalCpaCells.push("―"); continue; }
+      var c = months[i].cost, reg = months[i].regSet.size;
+      cpaRegCells.push(c > 0 && reg ? fmtYen(c / reg) : "―");
+      finalCpaCells.push(c > 0 && reg ? fmtYen((c - months[i].concRevenue) / reg) : "―");
+    }
+    cpaRegCells.push("―"); finalCpaCells.push("―"); // 合計列のCPAは出さない
+    rows.push({ label: "登録CPA", cells: cpaRegCells });
+    rows.push({ label: "最終CPA", cells: finalCpaCells });
+    return '<div class="note">合計は表示対象月までの累計です。</div>' + buildTableHtml(cols, rows, { totalColIndex: 12 });
+  }
+
+  function renderCohortPage(sources, fiscalStartYear, months, upToIdx) {
+    var cohorts = buildCohortAgg(sources, fiscalStartYear);
+    var cols = MONTH_LABELS.map(function (l) { return l + "コホート"; });
+    var rows = [
+      { label: "コスト", cells: monthCells(function (i) { return months[i].cost; }, true, null, upToIdx) },
+      { label: "登録数", cells: monthCells(function (i) { return cohorts[i].reg; }, false, null, upToIdx) },
+      { label: "登録CPA", cells: monthCells(function (i) { var c = months[i].cost; return c > 0 && cohorts[i].reg ? c / cohorts[i].reg : null; }, true, null, upToIdx) },
+      { label: "応募総件数", cells: monthCells(function (i) { return cohorts[i].appCount; }, false, null, upToIdx) },
+      { label: "応募ユニーク", cells: monthCells(function (i) { return cohorts[i].appSet.size; }, false, null, upToIdx) },
+      { label: "平均応募数", cells: monthCells(function (i) { return cohorts[i].reg ? cohorts[i].appCount / cohorts[i].reg : 0; }, false, 1, upToIdx) },
+      { label: "応募率", isRate: true, cells: rateCells(function (i) { return cohorts[i].reg ? cohorts[i].appSet.size / cohorts[i].reg : 0; }, upToIdx) },
+      { label: "参加確定総件数", cells: monthCells(function (i) { return cohorts[i].confCount; }, false, null, upToIdx) },
+      { label: "参加確定ユニーク", cells: monthCells(function (i) { return cohorts[i].confSet.size; }, false, null, upToIdx) },
+      { label: "登録→参加確定率", isRate: true, cells: rateCells(function (i) { return cohorts[i].reg ? cohorts[i].confSet.size / cohorts[i].reg : 0; }, upToIdx) },
+      { label: "応募→参加確定率", isRate: true, cells: rateCells(function (i) { return cohorts[i].appSet.size ? cohorts[i].confSet.size / cohorts[i].appSet.size : 0; }, upToIdx) },
+      { label: "当日参加総件数", cells: monthCells(function (i) { return cohorts[i].attCount; }, false, null, upToIdx) },
+      { label: "当日参加ユニーク", cells: monthCells(function (i) { return cohorts[i].attSet.size; }, false, null, upToIdx) },
+      { label: "登録→当日参加率", isRate: true, cells: rateCells(function (i) { return cohorts[i].reg ? cohorts[i].attSet.size / cohorts[i].reg : 0; }, upToIdx) },
+      { label: "参加確定→当日参加率", isRate: true, cells: rateCells(function (i) { return cohorts[i].confSet.size ? cohorts[i].attSet.size / cohorts[i].confSet.size : 0; }, upToIdx) },
+      { label: "同時登録売上", cells: monthCells(function (i) { return months[i].concRevenue; }, true, null, upToIdx) },
+      { label: "最終CPA", cells: monthCells(function (i) { var c = months[i].cost; return c > 0 && cohorts[i].reg ? (c - months[i].concRevenue) / cohorts[i].reg : null; }, true, null, upToIdx) }
+    ];
+    return '<div class="note">応募・参加確定・当日参加は「その月に登録した学生」のその後全期間の累計です（発生月ではなく登録月で束ねています）。コストは登録月自身の投資コストをそのまま割り当てており、学生ごとの按分ではありません。</div>' + buildTableHtml(cols, rows);
+  }
+
+  function renderAnnualPage(months, upToIdx) {
+    var cumApp = 0, cumConf = 0;
+    var cumAppArr = [], cumConfArr = [];
+    for (var i = 0; i < 12; i++) {
+      if (i <= upToIdx) { cumApp += months[i].appCount; cumConf += months[i].confCount; }
+      cumAppArr.push(i <= upToIdx ? cumApp : null);
+      cumConfArr.push(i <= upToIdx ? cumConf : null);
+    }
+    var rows = [
+      { label: "費用", cells: monthCells(function (i) { return months[i].cost; }, true, null, upToIdx) },
+      { label: "登録", cells: monthCells(function (i) { return months[i].regSet.size; }, false, null, upToIdx) },
+      { label: "応募件数", cells: monthCells(function (i) { return months[i].appCount; }, false, null, upToIdx) },
+      { label: "応募ユニーク", cells: monthCells(function (i) { return months[i].appSet.size; }, false, null, upToIdx) },
+      { label: "参加確定件数", cells: monthCells(function (i) { return months[i].confCount; }, false, null, upToIdx) },
+      { label: "参加確定ユニーク", cells: monthCells(function (i) { return months[i].confSet.size; }, false, null, upToIdx) },
+      { label: "当日参加件数", cells: monthCells(function (i) { return months[i].attCount; }, false, null, upToIdx) },
+      { label: "当日参加ユニーク", cells: monthCells(function (i) { return months[i].attSet.size; }, false, null, upToIdx) },
+      { label: "登録CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].regSet.size; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+      { label: "応募CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].appCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+      { label: "参加確定CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].confCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+      { label: "当日参加CPA", cells: monthCells(function (i) { var c = months[i].cost, m = months[i].attCount; return c > 0 && m ? c / m : null; }, true, null, upToIdx) },
+      { label: "最終CPA", cells: monthCells(function (i) { var c = months[i].cost, reg = months[i].regSet.size; return c > 0 && reg ? (c - months[i].concRevenue) / reg : null; }, true, null, upToIdx) },
+      { label: "UU", cells: monthCells(function (i) { return months[i].regSet.size; }, false, null, upToIdx) },
+      { label: "総応募（累計）", cells: cumAppArr.map(function (v) { return v == null ? "―" : fmtInt(v); }) },
+      { label: "総参加（累計）", cells: cumConfArr.map(function (v) { return v == null ? "―" : fmtInt(v); }) },
+      { label: "同時登録売上", cells: monthCells(function (i) { return months[i].concRevenue; }, true, null, upToIdx) }
+    ];
+    return '<div class="note">UUは暫定値として登録数と同値。総応募・総参加は年度開始（12月）からの累計。</div>' + buildTableHtml(MONTH_LABELS, rows);
+  }
+
+  var MC_METRICS = [
+    { key: "cost", label: "費用", isYen: true, higherBetter: null },
+    { key: "reg", label: "登録数", isYen: false, higherBetter: true },
+    { key: "appCount", label: "応募数", isYen: false, higherBetter: true },
+    { key: "confCount", label: "参加確定数", isYen: false, higherBetter: true },
+    { key: "attCount", label: "当日参加数", isYen: false, higherBetter: true },
+    { key: "cpaReg", label: "登録CPA", isYen: true, higherBetter: false, cpa: true },
+    { key: "cpaApp", label: "応募CPA", isYen: true, higherBetter: false, cpa: true },
+    { key: "cpaConf", label: "参加確定CPA", isYen: true, higherBetter: false, cpa: true },
+    { key: "cpaAtt", label: "当日参加CPA", isYen: true, higherBetter: false, cpa: true },
+    { key: "finalCpa", label: "最終CPA", isYen: true, higherBetter: false, cpa: true }
+  ];
+  function metricValue(months, idx, key) {
+    if (idx == null || idx < 0 || idx > 11) return null;
+    var m = months[idx];
+    if (!m) return null;
+    if (key === "cost") return m.cost;
+    if (key === "reg") return m.regSet.size;
+    if (key === "appCount") return m.appCount;
+    if (key === "confCount") return m.confCount;
+    if (key === "attCount") return m.attCount;
+    if (key === "cpaReg") return m.cost > 0 && m.regSet.size ? m.cost / m.regSet.size : null;
+    if (key === "cpaApp") return m.cost > 0 && m.appCount ? m.cost / m.appCount : null;
+    if (key === "cpaConf") return m.cost > 0 && m.confCount ? m.cost / m.confCount : null;
+    if (key === "cpaAtt") return m.cost > 0 && m.attCount ? m.cost / m.attCount : null;
+    if (key === "finalCpa") return m.cost > 0 && m.regSet.size ? (m.cost - m.concRevenue) / m.regSet.size : null;
+    return null;
+  }
+  function renderMonthComparePage(months, upToIdx, centerIdx) {
+    var idxs = [centerIdx - 1, centerIdx, centerIdx + 1];
+    var colNames = ["前月", "当月", "翌月"];
+    var html = '<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);">';
+    for (var c = 0; c < 3; c++) {
+      var idx = idxs[c];
+      var valid = idx >= 0 && idx <= upToIdx;
+      html += '<div class="card" style="margin-bottom:0;' + (c === 1 ? "border-color:var(--accent);background:var(--accent-tint);" : "") + '">';
+      html += '<div style="font-size:12.5px;font-weight:800;margin-bottom:8px;">' + esc(colNames[c]) + "　" + (idx >= 0 && idx <= 11 ? esc(MONTH_LABELS[idx]) : "") + "</div>";
+      if (!valid) {
+        html += '<div class="note" style="margin:0;">' + (idx > upToIdx ? "まだ実績がありません" : "年度範囲外です") + "</div>";
+      } else {
+        MC_METRICS.forEach(function (metric) {
+          var v = metricValue(months, idx, metric.key);
+          var valueText = v == null ? "―" : (metric.isYen ? fmtYen(v) : fmtInt(v));
+          var momHtml = "";
+          var prevIdx = idx - 1;
+          if (v != null && prevIdx >= 0 && prevIdx <= upToIdx) {
+            var pv = metricValue(months, prevIdx, metric.key);
+            if (pv != null) {
+              var diff = v - pv;
+              var pct = pv ? diff / pv : null;
+              var improved = metric.higherBetter === null ? null : (metric.higherBetter ? diff > 0 : diff < 0);
+              var color = improved === null || diff === 0 ? "var(--gray)" : (improved ? "var(--accent)" : "var(--red)");
+              var sign = diff > 0 ? "+" : "";
+              momHtml = '<div style="font-size:10.5px;color:' + color + ';">' + sign + (metric.isYen ? fmtYen(diff) : fmtInt(diff)) + (pct != null ? " (" + sign + (pct * 100).toFixed(1) + "%)" : "") + "</div>";
+            }
+          }
+          html += '<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--border);padding:6px 0;">' +
+            '<span style="font-size:11px;color:var(--gray);">' + esc(metric.label) + "</span>" +
+            '<span style="text-align:right;"><div style="font-weight:800;font-size:13px;">' + esc(valueText) + "</div>" + momHtml + "</span></div>";
+        });
+      }
+      html += "</div>";
+    }
+    html += "</div>";
+    return '<div class="note">対象月セレクターで選んだ月を「当月」として、前月・翌月と比較します。</div>' + html;
+  }
+
+  function monthMeta(fiscalStartYear, idx) {
+    return idx === 0 ? { year: fiscalStartYear, month: 12 } : { year: fiscalStartYear + 1, month: idx };
+  }
+  function buildDailyAgg(sources, year, month) {
+    var daysInMonth = new Date(year, month, 0).getDate();
+    var days = [];
+    for (var d = 0; d < daysInMonth; d++) days.push({ regCount: 0, appCount: 0, appSet: new Set(), confCount: 0, confSet: new Set(), attCount: 0, attSet: new Set() });
+    function dayIdx(ts) {
+      var p = jstParts(ts);
+      if (p.y === year && p.m === month) return p.day - 1;
+      return null;
+    }
+    (sources.uwStudents.data || []).forEach(function (r) {
+      if (!r.registeredAt) return;
+      var di = dayIdx(r.registeredAt);
+      if (di != null) days[di].regCount++;
+    });
+    (sources.applications.data || []).forEach(function (r) {
+      if (r.appliedAt) { var ai = dayIdx(r.appliedAt); if (ai != null) { days[ai].appCount++; days[ai].appSet.add(r.studentId); } }
+      var isConfirmed = CONFIRMED_STATUSES.indexOf(r.status) !== -1;
+      var isAttended = ATTENDED_STATUSES.indexOf(r.status) !== -1;
+      if (isConfirmed && r.confirmedAt) { var ci = dayIdx(r.confirmedAt); if (ci != null) { days[ci].confCount++; days[ci].confSet.add(r.studentId); } }
+      if (isAttended && r.eventDate) { var ei = dayIdx(r.eventDate); if (ei != null) { days[ei].attCount++; days[ei].attSet.add(r.studentId); } }
+    });
+    return { daysInMonth: daysInMonth, days: days };
+  }
+  function renderDailyPage(sources, fiscalStartYear, months, centerIdx) {
+    var meta = monthMeta(fiscalStartYear, centerIdx);
+    var mo = months[centerIdx];
+    var da = buildDailyAgg(sources, meta.year, meta.month);
+    var n = da.daysInMonth;
+    var costPerDay = mo.cost / n, peoplePerDay = mo.concPeople / n, revenuePerDay = mo.concRevenue / n;
+
+    function isOff(d) { var dow = new Date(meta.year, meta.month - 1, d).getDay(); return dow === 0 || dow === 6; }
+    function buildRow(label, arr, isYen, decimals, totalOverride) {
+      var cells = arr.map(function (v) { return isYen ? fmtYen(v) : (decimals ? v.toFixed(decimals) : fmtInt(v)); });
+      var total = totalOverride !== undefined ? totalOverride : arr.reduce(function (a, b) { return a + b; }, 0);
+      cells.push(isYen ? fmtYen(total) : (decimals ? total.toFixed(decimals) : fmtInt(total)));
+      return { label: label, cells: cells };
+    }
+    var rows = [
+      buildRow("登録数", da.days.map(function (x) { return x.regCount; }), false),
+      buildRow("応募件数", da.days.map(function (x) { return x.appCount; }), false),
+      buildRow("応募ユニーク", da.days.map(function (x) { return x.appSet.size; }), false),
+      buildRow("参加確定件数", da.days.map(function (x) { return x.confCount; }), false),
+      buildRow("参加確定ユニーク", da.days.map(function (x) { return x.confSet.size; }), false),
+      buildRow("当日参加件数", da.days.map(function (x) { return x.attCount; }), false),
+      buildRow("当日参加ユニーク", da.days.map(function (x) { return x.attSet.size; }), false),
+      buildRow("コスト日割り", da.days.map(function () { return costPerDay; }), true, null, mo.cost),
+      buildRow("同時登録人数日割り", da.days.map(function () { return peoplePerDay; }), false, 1, mo.concPeople),
+      buildRow("同時登録売上日割り", da.days.map(function () { return revenuePerDay; }), true, null, mo.concRevenue)
+    ];
+    var cols = [];
+    for (var d = 1; d <= n; d++) cols.push(meta.month + "/" + d);
+    cols.push("月合計");
+    var thead = "<tr><th></th>" + cols.map(function (c, i) {
+      var isTotal = i === cols.length - 1;
+      var off = !isTotal && isOff(i + 1);
+      return "<th" + (isTotal ? ' class="total-col"' : off ? ' style="background:#f2f0ec;"' : "") + ">" + esc(c) + "</th>";
+    }).join("") + "</tr>";
+    var tbody = rows.map(function (row) {
+      return "<tr><td>" + esc(row.label) + "</td>" + row.cells.map(function (c, i) {
+        var isTotal = i === row.cells.length - 1;
+        var off = !isTotal && isOff(i + 1);
+        return "<td" + (isTotal ? ' class="total-col"' : off ? ' style="background:#f7f5f2;"' : "") + ">" + esc(c) + "</td>";
+      }).join("") + "</tr>";
+    }).join("");
+    var table = '<div class="table-wrap"><table class="data-table"><thead>' + thead + "</thead><tbody>" + tbody + "</tbody></table></div>";
+    return '<div class="note">' + meta.year + "年" + meta.month + "月の日別実績（土日はグレー背景。祝日判定は未実装）。コスト・同時登録は月間実績を日数で均等割りした参考値です。</div>" + table;
+  }
+
+  // ---- ページナビゲーション ----
+  var NAV_PAGES = [
+    { key: "dashboard", label: "Dashboard" },
+    { key: "monthly-actual", label: "当月発生ベース" },
+    { key: "roi", label: "集客ROI" },
+    { key: "cohort", label: "登録月ベース（コホート）" },
+    { key: "annual", label: "年間管理" },
+    { key: "month-compare", label: "月間管理" },
+    { key: "daily", label: "デイリー実績" },
+    { key: "settings", label: "設定" }
+  ];
+  var state = { page: "dashboard", centerIdx: null, targets: {} };
+  var lastAgg = null; // { sources, fiscalStartYear, agg, upToIdx }
+
+  function renderNav() {
+    document.getElementById("navRow").innerHTML = NAV_PAGES.map(function (p) {
+      return '<button class="nav-btn' + (state.page === p.key ? " active" : "") + '" data-page="' + p.key + '">' + esc(p.label) + "</button>";
+    }).join("");
+  }
+  document.getElementById("navRow").addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-page]");
+    if (!btn) return;
+    state.page = btn.getAttribute("data-page");
+    renderPage();
+  });
+
+  document.getElementById("monthSelector").addEventListener("change", function (e) {
+    state.centerIdx = parseInt(e.target.value, 10);
+    renderPage();
+  });
+
+  function showEl(id, show) { document.getElementById(id).style.display = show ? "" : "none"; }
+
+  var NEEDS_SELECTOR = { "month-compare": true, daily: true };
+  var PAGE_TITLES = {
+    "monthly-actual": "当月発生ベース", roi: "集客ROI", cohort: "登録月ベース（コホート）",
+    annual: "年間管理", "month-compare": "月間管理", daily: "デイリー実績"
+  };
+
+  function renderPage() {
+    if (!lastAgg) return;
+    renderNav();
+    var isDashboard = state.page === "dashboard";
+    var isSettings = state.page === "settings";
+    var isTablePage = !isDashboard && !isSettings;
+    showEl("dashboardCard", isDashboard);
+    showEl("costSummaryCard", isDashboard);
+    showEl("chartCard", isDashboard);
+    showEl("funnelCard", isDashboard);
+    showEl("tablePageCard", isTablePage);
+    showEl("settingsCard", isSettings);
+
+    var months = lastAgg.agg.months, upToIdx = lastAgg.upToIdx;
+    if (state.centerIdx == null) state.centerIdx = upToIdx;
+
+    if (isDashboard) {
+      var t = totals(months, upToIdx);
+      var tt = computeTargetTotals(state.targets || {}, lastAgg.fiscalStartYear, upToIdx);
+      renderKpis(t, tt);
+      renderCostRow(t);
+      renderFunnel(t);
+      renderChart(months, upToIdx);
+      return;
+    }
+    if (isSettings) { renderSettingsContent(); return; }
+
+    document.getElementById("tablePageTitle").textContent = PAGE_TITLES[state.page] || "";
+    var showSelector = !!NEEDS_SELECTOR[state.page];
+    showEl("monthSelectorRow", showSelector);
+    if (showSelector) {
+      var sel = document.getElementById("monthSelector");
+      var optsHtml = "";
+      for (var i = 0; i <= upToIdx; i++) optsHtml += '<option value="' + i + '"' + (i === state.centerIdx ? " selected" : "") + ">" + esc(MONTH_LABELS[i]) + "</option>";
+      sel.innerHTML = optsHtml;
+    }
+
+    if (state.page === "monthly-actual") {
+      document.getElementById("tablePageContent").innerHTML = renderMonthlyActualPage(months, upToIdx);
+    } else if (state.page === "roi") {
+      document.getElementById("tablePageContent").innerHTML = renderRoiPage(months, upToIdx);
+    } else if (state.page === "cohort") {
+      document.getElementById("tablePageContent").innerHTML = renderCohortPage(lastAgg.sources, lastAgg.fiscalStartYear, months, upToIdx);
+    } else if (state.page === "annual") {
+      document.getElementById("tablePageContent").innerHTML = renderAnnualPage(months, upToIdx);
+    } else if (state.page === "month-compare") {
+      document.getElementById("tablePageContent").innerHTML = renderMonthComparePage(months, upToIdx, state.centerIdx);
+    } else if (state.page === "daily") {
+      document.getElementById("tablePageContent").innerHTML = renderDailyPage(lastAgg.sources, lastAgg.fiscalStartYear, months, state.centerIdx);
+    }
+  }
+
+  function renderDashboard(sources) {
+    var fiscalStartYear = currentFiscalStartYear();
+    var agg = aggregate(sources, fiscalStartYear);
+    // 「現在存在するデータのうち、最も新しい月」までを表示対象にする
+    var upToIdx = 0;
+    for (var i = 0; i < 12; i++) {
+      var m = agg.months[i];
+      if (m.regSet.size || m.appCount || m.confCount || m.attCount || m.cost) upToIdx = i;
+    }
+    window.__lastAgg = { months: agg.months, upToIdx: upToIdx };
+    lastAgg = { sources: sources, fiscalStartYear: fiscalStartYear, agg: agg, upToIdx: upToIdx };
+
+    document.getElementById("fiscalYearLabel").textContent = fiscalStartYear + "年度（" + fiscalStartYear + "/12〜" + (fiscalStartYear + 1) + "/11）";
+    var noteParts = [];
+    if (agg.unknownStatusCount > 0) noteParts.push("未知の参加ステータス：" + agg.unknownStatusCount + "件（集計から除外）");
+    noteParts.push("目標値はまだ設定できる仕組みがないため実績のみ表示。イベント種別分類はイベントマスタ未接続のため今回は省略。");
+    document.getElementById("dashboardNote").textContent = noteParts.join(" / ");
+
+    renderPage();
+  }
+
+  // ---- 設定画面 ----
+  var SETTINGS_TABS = [
+    { key: "fiscal", label: "年度設定" },
+    { key: "targets", label: "月別KPI目標" },
+    { key: "event-targets", label: "イベント種別目標" },
+    { key: "event-master", label: "イベントマスタ" },
+    { key: "field-mapping", label: "Larkフィールドマッピング" },
+    { key: "data-errors", label: "データエラー" },
+    { key: "costs", label: "コスト実績" }
+  ];
+  var settingsState = { tab: "fiscal", fieldMapping: null };
+  var lastSources = null;
+
+  function monthKeyOf(fiscalStartYear, idx) {
+    var meta = monthMeta(fiscalStartYear, idx);
+    return meta.year + "-" + String(meta.month).padStart(2, "0");
+  }
+
+  function renderSettingsTabs() {
+    document.getElementById("settingsTabRow").innerHTML = SETTINGS_TABS.map(function (t) {
+      return '<button class="toggle-btn' + (settingsState.tab === t.key ? " active" : "") + '" data-settings-tab="' + t.key + '">' + esc(t.label) + "</button>";
+    }).join("");
+  }
+
+  function renderFiscalTab() {
+    var y = lastAgg.fiscalStartYear;
+    return '<div class="note">年度は12/1〜翌11/30の固定ルールです（編集不可）。現在日付から自動判定されます。</div>' +
+      '<div class="row"><label>現在の年度</label><div>' + y + "年度（" + y + "/12〜" + (y + 1) + "/11）</div></div>";
+  }
+
+  function renderTargetsTab() {
+    var admin = document.getElementById("adminToggle").checked;
+    var y = lastAgg.fiscalStartYear;
+    var t = state.targets || {};
+    function inputCell(idx, field, step) {
+      var key = monthKeyOf(y, idx);
+      var v = (t[key] && t[key][field]) || 0;
+      return '<input type="number" class="target-input" style="width:100px;" value="' + v + '" step="' + step + '" min="0" data-month="' + idx + '" data-field="' + field + '"' + (admin ? "" : " disabled") + ">";
+    }
+    var thead = "<tr><th></th>" + MONTH_LABELS.map(function (l) { return "<th>" + esc(l) + "</th>"; }).join("") + "</tr>";
+    function row(label, field, step) {
+      var cells = "";
+      for (var i = 0; i < 12; i++) cells += "<td>" + inputCell(i, field, step) + "</td>";
+      return "<tr><td>" + esc(label) + "</td>" + cells + "</tr>";
+    }
+    var tbody = row("費用目標（¥）", "cost", 10000) + row("登録目標（人）", "reg", 1) +
+      row("同時登録人数目標（人）", "concurrentPeople", 1) + row("同時登録単価目標（¥）", "concurrentUnitPrice", 100);
+    return '<div class="note">' + (admin ? "編集するとDashboardの達成率に即時反映されます（フォーカスを外すと自動保存）。" : "編集するには管理者モードをONにしてください。") + "</div>" +
+      '<div class="table-wrap"><table class="data-table"><thead>' + thead + "</thead><tbody>" + tbody + "</tbody></table></div>";
+  }
+
+  function renderEventTargetsTab() {
+    return '<div class="note">イベントマスタが未接続のため、イベント種別ごとの目標設定はまだ利用できません。イベントマスタを接続した後に対応します。</div>';
+  }
+  function renderEventMasterTab() {
+    return '<div class="note">イベントマスタはまだ接続していません（検討中のため保留中です）。接続が決まり次第、掲載数・開催回数の集計に反映します。</div>';
+  }
+
+  function renderFieldMappingTab() {
+    if (!settingsState.fieldMapping) {
+      fetch(WORKER_BASE_URL + "/api/field-mapping").then(function (r) { return r.json(); }).then(function (json) {
+        settingsState.fieldMapping = json.data || {};
+        if (state.page === "settings" && settingsState.tab === "field-mapping") renderSettingsContent();
+      }).catch(function () {});
+      return '<div class="note">読み込み中...</div>';
+    }
+    var html = "";
+    Object.keys(settingsState.fieldMapping).forEach(function (key) {
+      var src = settingsState.fieldMapping[key];
+      html += '<div class="card" style="margin-bottom:10px;"><div style="font-weight:800;font-size:12.5px;margin-bottom:6px;">' + esc(key) + "</div>" +
+        '<div class="note" style="margin:0 0 4px;">appToken: ' + esc(src.appToken) + " ／ tableId: " + esc(src.tableId) + "</div>" +
+        '<div class="note" style="margin:0;">fields: ' + esc(JSON.stringify(src.fields)) + "</div></div>";
+    });
+    return '<div class="note">実際に接続しているField ID一覧です（読み取り専用。編集はWorker側のコードで行います。App Secret等の機密情報はここには出しません）。</div>' + html;
+  }
+
+  function renderDataErrorsTab() {
+    var agg = lastAgg.agg;
+    var registeredIds = {};
+    (lastSources.uwStudents.data || []).forEach(function (r) { if (r.studentId) registeredIds[r.studentId] = true; });
+    var joinFailCount = 0;
+    (lastSources.applications.data || []).forEach(function (r) { if (r.studentId && !registeredIds[r.studentId]) joinFailCount++; });
+    var rows = [
+      { type: "未知の参加ステータス", count: agg.unknownStatusCount, example: "参加状況が「参加確定/出席/遅刻/早退/欠席/拒否/学生キャンセル/応募中」以外の値" },
+      { type: "学生JOIN失敗", count: joinFailCount, example: "応募データの学生IDが①UW学生リストに存在しない（コホート集計からは除外、通常の応募・参加実績には残す）" }
+    ];
+    return '<div class="note">個人情報は表示しません。異常データのみ除外し、正常データは通常どおり集計します。</div>' +
+      rows.map(function (r) {
+        return '<div class="card" style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;"><div style="font-weight:800;font-size:12.5px;">' + esc(r.type) + '</div><div style="font-weight:800;color:' + (r.count > 0 ? "var(--red)" : "var(--green)") + ';">' + fmtInt(r.count) + "件</div></div>" +
+          '<div class="note" style="margin:6px 0 0;">' + esc(r.example) + "</div></div>";
+      }).join("");
+  }
+
+  function renderCostsTab() {
+    var admin = document.getElementById("adminToggle").checked;
+    var list = (lastSources.costs && lastSources.costs.data) || [];
+    var formHtml = !admin ? "" :
+      '<div class="card" style="margin-bottom:10px;"><h2>コスト実績を追加</h2>' +
+      '<div class="row"><label>日付</label><input type="date" id="f_date"></div>' +
+      '<div class="row"><label>コストのかけ方</label><input type="text" id="f_method" placeholder="例：Instagram広告"></div>' +
+      '<div class="row"><label>経由</label><input type="text" id="f_channel" placeholder="例：SNS広告"></div>' +
+      '<div class="row"><label>分類</label><select id="f_category"><option value="send">送客費</option><option value="ad">広告費</option><option value="other">その他</option></select></div>' +
+      '<div class="row"><label>金額（円）</label><input type="number" id="f_amount" min="0" step="1"></div>' +
+      '<button data-action="add-cost">追加</button></div>';
+    var rowsHtml = list.length === 0 ? '<tr><td colspan="6" style="color:var(--gray);">まだデータがありません</td></tr>' :
+      list.slice().sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); }).map(function (e) {
+        return "<tr><td>" + esc(e.date) + "</td><td>" + esc(CATEGORY_LABEL[e.category] || e.category) + "</td><td>" + esc(e.method) +
+          "</td><td>" + esc(e.channel) + "</td><td>" + fmtYen(e.amount) + "</td><td>" +
+          (admin ? '<button class="ghost" data-del="' + esc(e.id) + '">削除</button>' : "") + "</td></tr>";
+      }).join("");
+    var statusRows = Object.keys(lastSources).map(function (key) {
+      var s = lastSources[key];
+      return "<tr><td>" + esc(key) + "</td><td>" + esc(s.status) + "</td><td>" + esc(s.count) + "</td></tr>";
+    }).join("");
+    return formHtml +
+      '<div class="card"><h2>コスト実績一覧</h2><table><thead><tr><th>日付</th><th>分類</th><th>コストのかけ方</th><th>経由</th><th>金額</th><th></th></tr></thead><tbody>' + rowsHtml + "</tbody></table></div>" +
+      '<div class="card"><h2>/api/data 取得状況（参考）</h2><table><thead><tr><th>ソース</th><th>状態</th><th>件数</th></tr></thead><tbody>' + statusRows + "</tbody></table></div>";
+  }
+
+  function renderSettingsContent() {
+    renderSettingsTabs();
+    var html = "";
+    if (settingsState.tab === "fiscal") html = renderFiscalTab();
+    else if (settingsState.tab === "targets") html = renderTargetsTab();
+    else if (settingsState.tab === "event-targets") html = renderEventTargetsTab();
+    else if (settingsState.tab === "event-master") html = renderEventMasterTab();
+    else if (settingsState.tab === "field-mapping") html = renderFieldMappingTab();
+    else if (settingsState.tab === "data-errors") html = renderDataErrorsTab();
+    else if (settingsState.tab === "costs") html = renderCostsTab();
+    document.getElementById("settingsTabContent").innerHTML = html;
+  }
+
+  document.getElementById("settingsTabRow").addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-settings-tab]");
+    if (!btn) return;
+    settingsState.tab = btn.getAttribute("data-settings-tab");
+    renderSettingsContent();
+  });
+
+  document.getElementById("adminToggle").addEventListener("change", function (e) {
+    document.getElementById("adminBarLabel").textContent = "管理者モード：" + (e.target.checked ? "ON（編集可能）" : "OFF（閲覧のみ）");
+    if (state.page === "settings") renderSettingsContent();
+  });
+
+  document.getElementById("settingsTabContent").addEventListener("click", function (e) {
+    var addBtn = e.target.closest('[data-action="add-cost"]');
+    if (addBtn) {
+      var body = {
+        date: document.getElementById("f_date").value,
+        method: document.getElementById("f_method").value,
+        channel: document.getElementById("f_channel").value,
+        category: document.getElementById("f_category").value,
+        amount: document.getElementById("f_amount").value
+      };
+      if (!body.date || !body.amount) { showStatus("日付と金額は必須です。", "err"); return; }
+      showStatus("追加中...", "loading");
+      fetch(WORKER_BASE_URL + "/api/costs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json(); })
+        .then(function (json) {
+          if (json.status === "success") loadAll();
+          else showStatus("エラー: " + (json.error || "不明なエラー"), "err");
+        })
+        .catch(function (err) { showStatus("通信エラー: " + err.message, "err"); });
+      return;
+    }
+    var delBtn = e.target.closest("[data-del]");
+    if (delBtn) {
+      var id = delBtn.getAttribute("data-del");
+      if (!confirm("この行を削除しますか？")) return;
+      fetch(WORKER_BASE_URL + "/api/costs?id=" + encodeURIComponent(id), { method: "DELETE" })
+        .then(function (r) { return r.json(); })
+        .then(function () { loadAll(); })
+        .catch(function (err) { showStatus("削除に失敗しました: " + err.message, "err"); });
+    }
+  });
+
+  document.getElementById("settingsTabContent").addEventListener("change", function (e) {
+    var el = e.target.closest(".target-input");
+    if (!el) return;
+    var idx = parseInt(el.getAttribute("data-month"), 10);
+    var monthKey = monthKeyOf(lastAgg.fiscalStartYear, idx);
+    var wrap = document.getElementById("settingsTabContent");
+    function get(field) {
+      var i = wrap.querySelector('.target-input[data-month="' + idx + '"][data-field="' + field + '"]');
+      return i ? i.value : 0;
+    }
+    var body = { monthKey: monthKey, cost: get("cost"), reg: get("reg"), concurrentPeople: get("concurrentPeople"), concurrentUnitPrice: get("concurrentUnitPrice") };
+    fetch(WORKER_BASE_URL + "/api/targets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); })
+      .then(function () {
+        state.targets[monthKey] = {
+          cost: Number(body.cost) || 0, reg: Number(body.reg) || 0,
+          concurrentPeople: Number(body.concurrentPeople) || 0, concurrentUnitPrice: Number(body.concurrentUnitPrice) || 0
+        };
+        renderPage(); // Dashboardの達成率に反映
+      })
+      .catch(function (err) { showStatus("目標の保存に失敗しました: " + err.message, "err"); });
+  });
+
+  function loadAll() {
+    showStatus("読み込み中...", "loading");
+    return Promise.all([
+      fetch(WORKER_BASE_URL + "/api/data").then(function (r) { return r.json(); }),
+      fetch(WORKER_BASE_URL + "/api/targets").then(function (r) { return r.json(); }).catch(function () { return { data: {} }; })
+    ]).then(function (results) {
+      lastSources = results[0].sources || {};
+      state.targets = results[1].data || {};
+      renderDashboard(lastSources);
+      clearStatus();
+    }).catch(function (err) { showStatus("/api/data の取得に失敗しました: " + err.message, "err"); });
+  }
+
+  loadAll();
+})();
+</script>
+</body>
+</html>
