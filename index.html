@@ -45,13 +45,6 @@
   .kpi-value.dim{color:var(--gray);font-size:16px;}
   .kpi-grid-cpa .kpi-value.dim{font-size:14px;}
 
-  .channel-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);}
-  .channel-row:last-child{border-bottom:none;}
-  .channel-name{width:160px;flex-shrink:0;font-size:12.5px;font-weight:700;}
-  .channel-bar-wrap{flex:1;background:var(--bg);border-radius:6px;overflow:hidden;height:16px;}
-  .channel-bar{height:100%;background:var(--accent);border-radius:6px;}
-  .channel-count{width:100px;flex-shrink:0;text-align:right;font-size:12px;font-variant-numeric:tabular-nums;}
-
   .cost-row{display:flex;gap:12px;flex-wrap:wrap;}
   .cost-card{flex:1;min-width:130px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
   .cost-card.total{background:var(--accent-tint);}
@@ -138,12 +131,6 @@
 <div class="card" id="costSummaryCard" style="display:none;">
   <h2>コスト内訳</h2>
   <div class="cost-row" id="costRow"></div>
-</div>
-
-<div class="card" id="channelCard" style="display:none;">
-  <h2>登録 経由別内訳</h2>
-  <div class="note" style="margin:0 0 10px;">「経由」フィールドの値をそのまま集計しています（表記ゆれ・テスト値も含む）。</div>
-  <div id="channelList"></div>
 </div>
 
 <div class="card" id="chartCard" style="display:none;">
@@ -444,24 +431,6 @@
     }
     renderCardGroup("kpiGridPrimary", primaryCards);
     renderCardGroup("kpiGridCpa", cpaCards);
-  }
-
-  function renderChannelBreakdown(t) {
-    var entries = Object.keys(t.channelCounts).map(function (ch) { return { name: ch, count: t.channelCounts[ch] }; });
-    entries.sort(function (a, b) { return b.count - a.count; });
-    var total = entries.reduce(function (a, e) { return a + e.count; }, 0);
-    var max = entries.length ? entries[0].count : 1;
-    if (entries.length === 0) {
-      document.getElementById("channelList").innerHTML = '<div class="note" style="margin:0;">データがありません。</div>';
-      return;
-    }
-    document.getElementById("channelList").innerHTML = entries.map(function (e) {
-      var pct = total ? (e.count / total * 100).toFixed(1) : "0.0";
-      var barPct = (e.count / max * 100).toFixed(1);
-      return '<div class="channel-row"><div class="channel-name">' + esc(e.name) + '</div>' +
-        '<div class="channel-bar-wrap"><div class="channel-bar" style="width:' + barPct + '%;"></div></div>' +
-        '<div class="channel-count">' + fmtInt(e.count) + "件（" + pct + "%）</div></div>";
-    }).join("");
   }
 
   function renderCostRow(t) {
@@ -920,7 +889,6 @@
     var isTablePage = !isDashboard && !isSettings;
     showEl("dashboardCard", isDashboard);
     showEl("costSummaryCard", isDashboard);
-    showEl("channelCard", isDashboard);
     showEl("chartCard", isDashboard);
     showEl("funnelCard", isDashboard);
     showEl("tablePageCard", isTablePage);
@@ -934,7 +902,6 @@
       var tt = computeTargetTotals(state.targets || {}, lastAgg.fiscalStartYear, upToIdx);
       renderKpis(t, tt);
       renderCostRow(t);
-      renderChannelBreakdown(t);
       renderFunnel(t);
       renderChart(months, upToIdx);
       return;
