@@ -802,58 +802,129 @@
     return '<div class="note">' + meta.year + "年" + meta.month + "月の日別実績（土日はグレー背景。祝日判定は未実装）。コスト・同時登録は月間実績を日数で均等割りした参考値です。</div>" + table;
   }
 
-  function renderChannelPage(months, upToIdx) {
-    var totalByChannel = {};
-    for (var i = 0; i <= upToIdx; i++) {
-      Object.keys(months[i].channelCounts).forEach(function (ch) {
-        totalByChannel[ch] = (totalByChannel[ch] || 0) + months[i].channelCounts[ch];
-      });
+  // 学生ID→経由 の対応表（①UW学生リストの「経由」フィールドから）
+  function buildChannelOfMap(sources) {
+    var channelOf = {};
+    (sources.uwStudents.data || []).forEach(function (r) { channelOf[r.studentId] = r.channel || "（未設定）"; });
+    return channelOf;
+  }
+  function listChannels(sources) {
+    var counts = {};
+    (sources.uwStudents.data || []).forEach(function (r) {
+      var ch = r.channel || "（未設定）";
+      counts[ch] = (counts[ch] || 0) + 1;
+    });
+    return Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
+  }
+  // 選択した経由だけに絞った月別集計（登録は「経由」で直接、応募/参加確定/当日参加は
+  // 学生ID経由でJOINして絞り込む。①UW学生リストに存在しない学生は仕様どおり除外）
+  function aggregateByChannel(sources, fiscalStartYear, channel) {
+    var months = [];
+    for (var i = 0; i < 12; i++) months.push(emptyMonth());
+    var channelOf = buildChannelOfMap(sources);
+
+    (sources.uwStudents.data || []).forEach(function (r) {
+      if (!r.registeredAt || (r.channel || "（未設定）") !== channel) return;
+      var idx = fiscalIndex(r.registeredAt, fiscalStartYear);
+      if (idx != null) months[idx].regSet.add(r.studentId);
+    });
+    (sources.applications.data || []).forEach(function (r) {
+      if (channelOf[r.studentId] !== channel) return;
+      if (r.appliedAt) { var ai = fiscalIndex(r.appliedAt, fiscalStartYear); if (ai != null) { months[ai].appCount++; months[ai].appSet.add(r.studentId); } }
+      var isConfirmed = CONFIRMED_STATUSES.indexOf(r.status) !== -1;
+      var isAttended = ATTENDED_STATUSES.indexOf(r.status) !== -1;
+      if (isConfirmed && r.confirmedAt) { var ci = fiscalIndex(r.confirmedAt, fiscalStartYear); if (ci != null) { months[ci].confCount++; months[ci].confSet.add(r.studentId); } }
+      if (isAttended && r.eventDate) { var evi = fiscalIndex(r.eventDate, fiscalStartYear); if (evi != null) { months[evi].attCount++; months[evi].attSet.add(r.studentId); } }
+    });
+    return months;
+  }
+
+  function renderChannelPage(sources, fiscalStartYear, upToIdx) {
+    var channels = listChannels(sources);
+    if (channels.length === 0) return '<div class="note">データがありません。</div>';
+    if (!state.channelFilter || channels.indexOf(state.channelFilter) === -1) state.channelFilter = channels[0];
+
+    var selectHtml = '<div class="row" style="max-width:320px;"><label>経由</label><select id="channelFilterSelect">' +
+      channels.map(function (ch) { return '<option value="' + esc(ch) + '"' + (ch === state.channelFilter ? " selected" : "") + ">" + esc(ch) + "</option>"; }).join("") +
+      "</select></div>";
+
+    var chMonths = aggregateByChannel(sources, fiscalStartYear, state.channelFilter);
+    var t = totals(chMonths, upToIdx);
+
+    var kpiHtml = '<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);">' +
+      [
+        { label: "登録数", value: fmtInt(t.reg) },
+        { label: "応募数（件数）", value: fmtInt(t.appCount) },
+        { label: "参加確定数（件数）", value: fmtInt(t.confCount) },
+        { label: "当日参加数（件数）", value: fmtInt(t.attCount) }
+      ].map(function (c) {
+        return '<div class="kpi-card"><div class="kpi-label">' + esc(c.label) + '</div><div class="kpi-value">' + esc(c.value) + "</div></div>";
+      }).join("") + "</div>";
+
+    var funnelStages = [
+      { name: "登録", value: t.reg }, { name: "応募", value: t.appUnique.size },
+      { name: "参加確定", value: t.confUnique.size }, { name: "当日参加", value: t.attUnique.size }
+    ];
+    var funnelHtml = '<div class="funnel">';
+    for (var i = 0; i < funnelStages.length; i++) {
+      funnelHtml += '<div class="funnel-stage"><div class="funnel-box"><div class="funnel-name">' + esc(funnelStages[i].name) + '</div><div class="funnel-num">' + fmtInt(funnelStages[i].value) + "</div></div></div>";
+      if (i < funnelStages.length - 1) {
+        var rate = funnelStages[i].value ? funnelStages[i + 1].value / funnelStages[i].value : 0;
+        funnelHtml += '<div class="funnel-arrow">→<br>' + fmtPct(rate) + "</div>";
+      }
     }
-    var channels = Object.keys(totalByChannel).sort(function (a, b) { return totalByChannel[b] - totalByChannel[a]; });
-    if (channels.length === 0) {
-      return '<div class="note">データがありません。</div>';
-    }
+    funnelHtml += "</div>";
+
+    // 参考：経由×月のクロス集計表（費用はCPAとして経由別に紐付けできないため件数のみ）
     var cols = MONTH_LABELS.concat(["合計"]);
-    var rows = channels.map(function (ch) {
-      var cells = [];
-      var total = 0;
+
+    var totalByChannel = {};
+    for (var i2 = 0; i2 <= upToIdx; i2++) {
+      var mSrc = lastAgg.agg.months[i2];
+      Object.keys(mSrc.channelCounts).forEach(function (ch) { totalByChannel[ch] = (totalByChannel[ch] || 0) + mSrc.channelCounts[ch]; });
+    }
+    var tableRows = channels.map(function (ch) {
+      var cells = [], total = 0;
       for (var i = 0; i < 12; i++) {
         if (i > upToIdx) { cells.push("―"); continue; }
-        var v = months[i].channelCounts[ch] || 0;
+        var v = lastAgg.agg.months[i].channelCounts[ch] || 0;
         total += v;
         cells.push(fmtInt(v));
       }
       cells.push(fmtInt(total));
       return { label: ch, cells: cells };
     });
-    // 合計行
-    var totalCells = [];
-    var grandTotal = 0;
-    for (var i = 0; i < 12; i++) {
-      if (i > upToIdx) { totalCells.push("―"); continue; }
-      var monthTotal = Object.keys(months[i].channelCounts).reduce(function (a, ch) { return a + months[i].channelCounts[ch]; }, 0);
+    var totalCells = [], grandTotal = 0;
+    for (var i3 = 0; i3 < 12; i3++) {
+      if (i3 > upToIdx) { totalCells.push("―"); continue; }
+      var monthTotal = Object.keys(lastAgg.agg.months[i3].channelCounts).reduce(function (a, ch) { return a + lastAgg.agg.months[i3].channelCounts[ch]; }, 0);
       grandTotal += monthTotal;
       totalCells.push(fmtInt(monthTotal));
     }
     totalCells.push(fmtInt(grandTotal));
-    rows.push({ label: "合計", cells: totalCells, isTotal: true });
-    return '<div class="note">登録者数を「経由」フィールドの値ごと・月ごとに集計しています。実データの値をそのまま使っているため、表記ゆれ・テスト値（DRAFT等）も含みます。</div>' +
-      buildTableHtml(cols, rows, { totalColIndex: 12 });
+    tableRows.push({ label: "合計", cells: totalCells, isTotal: true });
+
+    return '<div class="note">登録は「経由」フィールドで、応募・参加確定・当日参加は学生IDのJOINで同じ経由に絞り込んでいます。費用は経由に紐付けられないためCPAは表示していません。</div>' +
+      selectHtml +
+      '<div class="kpi-group-label">選択中の経由：' + esc(state.channelFilter) + "（年度累計）</div>" + kpiHtml +
+      '<div class="kpi-group-label">ファネル</div>' + funnelHtml +
+      '<div class="kpi-group-label">登録数：経由×月の内訳（参考）</div>' +
+      buildTableHtml(cols, tableRows, { totalColIndex: 12 });
   }
 
   // ---- ページナビゲーション ----
   var NAV_PAGES = [
     { key: "dashboard", label: "Dashboard" },
+    { key: "channel", label: "経由別内訳" },
     { key: "monthly-actual", label: "当月発生ベース" },
     { key: "roi", label: "集客ROI" },
     { key: "cohort", label: "登録月ベース（コホート）" },
     { key: "annual", label: "年間管理" },
     { key: "month-compare", label: "月間管理" },
     { key: "daily", label: "デイリー実績" },
-    { key: "channel", label: "経由別内訳" },
     { key: "settings", label: "設定" }
   ];
-  var state = { page: "dashboard", centerIdx: null, targets: {} };
+  var state = { page: "dashboard", centerIdx: null, targets: {}, channelFilter: null };
   var lastAgg = null; // { sources, fiscalStartYear, agg, upToIdx }
 
   function renderNav() {
@@ -870,6 +941,12 @@
 
   document.getElementById("monthSelector").addEventListener("change", function (e) {
     state.centerIdx = parseInt(e.target.value, 10);
+    renderPage();
+  });
+
+  document.getElementById("tablePageContent").addEventListener("change", function (e) {
+    if (e.target.id !== "channelFilterSelect") return;
+    state.channelFilter = e.target.value;
     renderPage();
   });
 
@@ -931,7 +1008,7 @@
     } else if (state.page === "daily") {
       document.getElementById("tablePageContent").innerHTML = renderDailyPage(lastAgg.sources, lastAgg.fiscalStartYear, months, state.centerIdx);
     } else if (state.page === "channel") {
-      document.getElementById("tablePageContent").innerHTML = renderChannelPage(months, upToIdx);
+      document.getElementById("tablePageContent").innerHTML = renderChannelPage(lastAgg.sources, lastAgg.fiscalStartYear, upToIdx);
     }
   }
 
