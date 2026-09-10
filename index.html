@@ -1522,18 +1522,18 @@
       '</div></div>' +
       '<div class="row"><label>請求日</label><input type="date" id="f_invoice_date"></div>' +
       '<div class="row"><label>振込期日</label><input type="date" id="f_due_date"></div>' +
-      '<div class="row"><label>コストのかけ方</label><input type="text" id="f_method" placeholder="例：Instagram広告"></div>' +
       '<div class="row"><label>経由</label><select id="f_channel"><option value="">（全体・特定経由なし）</option>' +
       channelOpts.map(function (ch) { return '<option value="' + esc(ch) + '">' + esc(ch) + "</option>"; }).join("") +
       '</select></div>' +
       '<div class="row"><label>分類</label><select id="f_category"><option value="send">送客費</option><option value="ad">広告費</option><option value="other">その他</option></select></div>' +
       '<div class="row"><label>金額（円）</label><input type="number" id="f_amount" min="0" step="1"></div>' +
+      '<div class="row"><label>備考</label><input type="text" id="f_note" placeholder="例：Instagram広告"></div>' +
       '<div class="note">KPIの月別計上には「請求日」を使用します（振込期日は資金繰り確認用の参考情報で、集計には使いません）。経由を選ぶと、経由別内訳・年間管理・月間管理の経由別表示にこの費用がCPAとして反映されます。特定の経由に絞れない費用は「全体・特定経由なし」のままにしてください（全体の集計には含まれます）。</div>' +
       '<button data-action="add-cost">追加</button></div>';
     var rowsHtml = list.length === 0 ? '<tr><td colspan="7" style="color:var(--gray);">まだデータがありません</td></tr>' :
       list.slice().sort(function (a, b) { return (b.invoiceDate || "").localeCompare(a.invoiceDate || ""); }).map(function (e) {
-        return "<tr><td>" + esc(e.invoiceDate) + "</td><td>" + esc(e.dueDate || "―") + "</td><td>" + esc(CATEGORY_LABEL[e.category] || e.category) + "</td><td>" + esc(e.method) +
-          "</td><td>" + esc(e.channel || "―") + "</td><td>" + fmtYen(e.amount) + "</td><td>" +
+        return "<tr><td>" + esc(e.invoiceDate) + "</td><td>" + esc(e.dueDate || "―") + "</td><td>" + esc(CATEGORY_LABEL[e.category] || e.category) +
+          "</td><td>" + esc(e.channel || "―") + "</td><td>" + fmtYen(e.amount) + "</td><td>" + esc(e.note || "―") + "</td><td>" +
           (admin ? '<button class="ghost" data-del="' + esc(e.id) + '">削除</button>' : "") + "</td></tr>";
       }).join("");
     var statusRows = Object.keys(lastSources).map(function (key) {
@@ -1541,7 +1541,7 @@
       return "<tr><td>" + esc(key) + "</td><td>" + esc(s.status) + "</td><td>" + esc(s.count) + "</td></tr>";
     }).join("");
     return formHtml +
-      '<div class="card"><h2>コスト実績一覧</h2><table><thead><tr><th>請求日</th><th>振込期日</th><th>分類</th><th>コストのかけ方</th><th>経由</th><th>金額</th><th></th></tr></thead><tbody>' + rowsHtml + "</tbody></table></div>" +
+      '<div class="card"><h2>コスト実績一覧</h2><table><thead><tr><th>請求日</th><th>振込期日</th><th>分類</th><th>経由</th><th>金額</th><th>備考</th><th></th></tr></thead><tbody>' + rowsHtml + "</tbody></table></div>" +
       '<div class="card"><h2>/api/data 取得状況（参考）</h2><table><thead><tr><th>ソース</th><th>状態</th><th>件数</th></tr></thead><tbody>' + statusRows + "</tbody></table></div>";
   }
 
@@ -1639,7 +1639,7 @@
       var body = {
         invoiceDate: document.getElementById("f_invoice_date").value,
         dueDate: document.getElementById("f_due_date").value,
-        method: document.getElementById("f_method").value,
+        note: document.getElementById("f_note").value,
         channel: document.getElementById("f_channel").value,
         category: document.getElementById("f_category").value,
         amount: document.getElementById("f_amount").value
