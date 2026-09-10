@@ -1627,7 +1627,7 @@
     var list = (lastSources.costs && lastSources.costs.data) || [];
     var channelOpts = listChannels(lastSources);
     var formHtml = !admin ? "" :
-      '<div class="card" style="margin-bottom:10px;"><h2>コスト実績を追加</h2>' +
+      '<div class="card" style="margin-bottom:10px;"><h2 id="costFormTitle">コスト実績を追加</h2>' +
       '<div class="row" style="align-items:flex-start;">' +
       '<label>請求書から読取</label>' +
       '<div style="flex:1;">' +
@@ -1635,28 +1635,32 @@
       '<button type="button" data-action="ocr-invoice" id="ocrInvoiceBtn">この請求書から自動入力</button>' +
       '<div class="note" id="ocrStatus" style="margin:6px 0 0;">画像またはPDFの請求書を選んで実行すると、日付・金額欄を自動入力します（無料・ブラウザ内処理、外部送信なし）。認識精度は完全ではないため必ず内容を確認してください。</div>' +
       '</div></div>' +
+      '<div class="row"><label>企業名</label><input type="text" id="f_company" placeholder="例：株式会社○○"></div>' +
       '<div class="row"><label>請求日</label><input type="date" id="f_invoice_date"></div>' +
       '<div class="row"><label>振込期日</label><input type="date" id="f_due_date"></div>' +
       '<div class="row"><label>経由</label><select id="f_channel"><option value="">（全体・特定経由なし）</option>' +
       channelOpts.map(function (ch) { return '<option value="' + esc(ch) + '">' + esc(ch) + "</option>"; }).join("") +
       '</select></div>' +
+      '<div class="row"><label>摘要</label><input type="text" id="f_summary" placeholder="例：9月分Instagram広告費"></div>' +
       '<div class="row"><label>分類</label><select id="f_category"><option value="send">送客費</option><option value="ad">広告費</option><option value="other">その他</option></select></div>' +
       '<div class="row"><label>金額（円）</label><input type="number" id="f_amount" min="0" step="1"></div>' +
       '<div class="row"><label>備考</label><input type="text" id="f_note" placeholder="例：Instagram広告"></div>' +
       '<div class="note">KPIの月別計上には「請求日」を使用します（振込期日は資金繰り確認用の参考情報で、集計には使いません）。経由を選ぶと、経由別内訳・年間管理・月間管理の経由別表示にこの費用がCPAとして反映されます。特定の経由に絞れない費用は「全体・特定経由なし」のままにしてください（全体の集計には含まれます）。</div>' +
-      '<button data-action="add-cost">追加</button></div>';
-    var rowsHtml = list.length === 0 ? '<tr><td colspan="7" style="color:var(--gray);">まだデータがありません</td></tr>' :
+      '<button data-action="add-cost" id="costFormSubmitBtn">追加</button>' +
+      '<button type="button" data-action="cancel-cost-edit" id="costFormCancelBtn" class="ghost" style="display:none;margin-left:8px;">編集をキャンセル</button>' +
+      '</div>';
+    var rowsHtml = list.length === 0 ? '<tr><td colspan="9" style="color:var(--gray);">まだデータがありません</td></tr>' :
       list.slice().sort(function (a, b) { return (b.invoiceDate || "").localeCompare(a.invoiceDate || ""); }).map(function (e) {
-        return "<tr><td>" + esc(e.invoiceDate) + "</td><td>" + esc(e.dueDate || "―") + "</td><td>" + esc(CATEGORY_LABEL[e.category] || e.category) +
-          "</td><td>" + esc(e.channel || "―") + "</td><td>" + fmtYen(e.amount) + "</td><td>" + esc(e.note || "―") + "</td><td>" +
-          (admin ? '<button class="ghost" data-del="' + esc(e.id) + '">削除</button>' : "") + "</td></tr>";
+        return "<tr><td>" + esc(e.companyName || "―") + "</td><td>" + esc(e.invoiceDate) + "</td><td>" + esc(e.dueDate || "―") + "</td><td>" + esc(CATEGORY_LABEL[e.category] || e.category) +
+          "</td><td>" + esc(e.channel || "―") + "</td><td>" + esc(e.summary || "―") + "</td><td>" + fmtYen(e.amount) + "</td><td>" + esc(e.note || "―") + "</td><td>" +
+          (admin ? '<button class="ghost" data-edit="' + esc(e.id) + '">編集</button> <button class="ghost" data-del="' + esc(e.id) + '">削除</button>' : "") + "</td></tr>";
       }).join("");
     var statusRows = Object.keys(lastSources).map(function (key) {
       var s = lastSources[key];
       return "<tr><td>" + esc(key) + "</td><td>" + esc(s.status) + "</td><td>" + esc(s.count) + "</td></tr>";
     }).join("");
     return formHtml +
-      '<div class="card"><h2>コスト実績一覧</h2><table><thead><tr><th>請求日</th><th>振込期日</th><th>分類</th><th>経由</th><th>金額</th><th>備考</th><th></th></tr></thead><tbody>' + rowsHtml + "</tbody></table></div>" +
+      '<div class="card"><h2>コスト実績一覧</h2><table><thead><tr><th>企業名</th><th>請求日</th><th>振込期日</th><th>分類</th><th>経由</th><th>摘要</th><th>金額</th><th>備考</th><th></th></tr></thead><tbody>' + rowsHtml + "</tbody></table></div>" +
       '<div class="card"><h2>/api/data 取得状況（参考）</h2><table><thead><tr><th>ソース</th><th>状態</th><th>件数</th></tr></thead><tbody>' + statusRows + "</tbody></table></div>";
   }
 
@@ -1751,25 +1755,53 @@
     }
     var addBtn = e.target.closest('[data-action="add-cost"]');
     if (addBtn) {
+      var editingId = addBtn.getAttribute("data-editing-id");
       var body = {
+        companyName: document.getElementById("f_company").value,
         invoiceDate: document.getElementById("f_invoice_date").value,
         dueDate: document.getElementById("f_due_date").value,
+        summary: document.getElementById("f_summary").value,
         note: document.getElementById("f_note").value,
         channel: document.getElementById("f_channel").value,
         category: document.getElementById("f_category").value,
         amount: document.getElementById("f_amount").value
       };
       if (!body.invoiceDate || !body.amount) { showStatus("請求日と金額は必須です。", "err"); return; }
-      showStatus("追加中...", "loading");
-      fetch(WORKER_BASE_URL + "/api/costs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      showStatus(editingId ? "更新中..." : "追加中...", "loading");
+      var url = WORKER_BASE_URL + "/api/costs" + (editingId ? ("?id=" + encodeURIComponent(editingId)) : "");
+      fetch(url, { method: editingId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
         .then(checkResponse)
         .then(function (json) {
           if (json.status === "success") loadAll();
-          else logError("コスト追加", json.error || "不明なエラー");
+          else logError(editingId ? "コスト更新" : "コスト追加", json.error || "不明なエラー");
         })
-        .catch(function (err) { logError("コスト追加", err.message); });
+        .catch(function (err) { logError(editingId ? "コスト更新" : "コスト追加", err.message); });
       return;
     }
+    var editBtn = e.target.closest("[data-edit]");
+    if (editBtn) {
+      var editId = editBtn.getAttribute("data-edit");
+      var editList = (lastSources.costs && lastSources.costs.data) || [];
+      var entry = editList.filter(function (x) { return x.id === editId; })[0];
+      if (!entry) return;
+      document.getElementById("f_company").value = entry.companyName || "";
+      document.getElementById("f_invoice_date").value = entry.invoiceDate || "";
+      document.getElementById("f_due_date").value = entry.dueDate || "";
+      document.getElementById("f_channel").value = entry.channel || "";
+      document.getElementById("f_summary").value = entry.summary || "";
+      document.getElementById("f_category").value = entry.category || "send";
+      document.getElementById("f_amount").value = entry.amount || "";
+      document.getElementById("f_note").value = entry.note || "";
+      document.getElementById("costFormTitle").textContent = "コスト実績を編集";
+      var submitBtn = document.getElementById("costFormSubmitBtn");
+      submitBtn.textContent = "更新";
+      submitBtn.setAttribute("data-editing-id", editId);
+      document.getElementById("costFormCancelBtn").style.display = "";
+      submitBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    var cancelEditBtn = e.target.closest('[data-action="cancel-cost-edit"]');
+    if (cancelEditBtn) { renderSettingsContent(); return; }
     var delBtn = e.target.closest("[data-del]");
     if (delBtn) {
       var id = delBtn.getAttribute("data-del");
