@@ -313,8 +313,9 @@
     });
 
     (sources.costs.data || []).forEach(function (r) {
-      if (!r.date) return;
-      var ts = new Date(r.date + "T00:00:00+09:00").getTime();
+      // KPI計上月は「請求日」を基準にする（振込期日は資金繰り参考用で集計には使わない）
+      if (!r.invoiceDate) return;
+      var ts = new Date(r.invoiceDate + "T00:00:00+09:00").getTime();
       var idx = fiscalIndex(ts, fiscalStartYear);
       if (idx == null) return;
       var amt = Number(r.amount) || 0;
@@ -942,8 +943,8 @@
     });
     // コスト実績の「経由」欄が選択中の経由と完全一致するものだけを積み上げる（一致しないもの・未設定は含めない）
     (sources.costs.data || []).forEach(function (r) {
-      if (!r.date || r.channel !== channel) return;
-      var ts = new Date(r.date + "T00:00:00+09:00").getTime();
+      if (!r.invoiceDate || r.channel !== channel) return;
+      var ts = new Date(r.invoiceDate + "T00:00:00+09:00").getTime();
       var idx = fiscalIndex(ts, fiscalStartYear);
       if (idx == null) return;
       var amt = Number(r.amount) || 0;
@@ -1468,12 +1469,25 @@
   }
   // OCRの全文テキストから日付・金額をヒューリスティックに抽出する（完全ではないため要人力確認）
   function parseInvoiceText(text) {
-    var result = { date: null, amount: null };
-    var dateMatch = text.match(/(\d{4})[年\/\-.](\d{1,2})[月\/\-.](\d{1,2})日?/);
-    if (dateMatch) {
-      var mm = ("0" + dateMatch[2]).slice(-2), dd = ("0" + dateMatch[3]).slice(-2);
-      result.date = dateMatch[1] + "-" + mm + "-" + dd;
+    var result = { invoiceDate: null, dueDate: null, amount: null };
+    function matchDateIn(str) {
+      var m = str.match(/(\d{4})[年\/\-.](\d{1,2})[月\/\-.](\d{1,2})日?/);
+      if (!m) return null;
+      return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
     }
+    function findDateNear(keywords) {
+      for (var i = 0; i < keywords.length; i++) {
+        var idx = text.indexOf(keywords[i]);
+        if (idx === -1) continue;
+        var found = matchDateIn(text.slice(idx, idx + 30));
+        if (found) return found;
+      }
+      return null;
+    }
+    result.invoiceDate = findDateNear(["請求日", "発行日", "発行年月日", "御請求日"]);
+    result.dueDate = findDateNear(["振込期日", "お振込期日", "お支払期限", "支払期限", "振込期限", "お支払期日"]);
+    // キーワード近くで見つからない場合、文中最初に出てくる日付を請求日の候補とする
+    if (!result.invoiceDate) result.invoiceDate = matchDateIn(text);
     var keywords = ["御請求金額", "ご請求金額", "請求金額", "合計金額", "税込合計", "お支払金額", "合計", "小計"];
     var amount = null;
     for (var i = 0; i < keywords.length && amount == null; i++) {
@@ -1506,18 +1520,19 @@
       '<button type="button" data-action="ocr-invoice" id="ocrInvoiceBtn">この請求書から自動入力</button>' +
       '<div class="note" id="ocrStatus" style="margin:6px 0 0;">画像またはPDFの請求書を選んで実行すると、日付・金額欄を自動入力します（無料・ブラウザ内処理、外部送信なし）。認識精度は完全ではないため必ず内容を確認してください。</div>' +
       '</div></div>' +
-      '<div class="row"><label>日付</label><input type="date" id="f_date"></div>' +
+      '<div class="row"><label>請求日</label><input type="date" id="f_invoice_date"></div>' +
+      '<div class="row"><label>振込期日</label><input type="date" id="f_due_date"></div>' +
       '<div class="row"><label>コストのかけ方</label><input type="text" id="f_method" placeholder="例：Instagram広告"></div>' +
       '<div class="row"><label>経由</label><select id="f_channel"><option value="">（全体・特定経由なし）</option>' +
       channelOpts.map(function (ch) { return '<option value="' + esc(ch) + '">' + esc(ch) + "</option>"; }).join("") +
       '</select></div>' +
       '<div class="row"><label>分類</label><select id="f_category"><option value="send">送客費</option><option value="ad">広告費</option><option value="other">その他</option></select></div>' +
       '<div class="row"><label>金額（円）</label><input type="number" id="f_amount" min="0" step="1"></div>' +
-      '<div class="note">経由を選ぶと、経由別内訳・年間管理・月間管理の経由別表示にこの費用がCPAとして反映されます。特定の経由に絞れない費用は「全体・特定経由なし」のままにしてください（全体の集計には含まれます）。</div>' +
+      '<div class="note">KPIの月別計上には「請求日」を使用します（振込期日は資金繰り確認用の参考情報で、集計には使いません）。経由を選ぶと、経由別内訳・年間管理・月間管理の経由別表示にこの費用がCPAとして反映されます。特定の経由に絞れない費用は「全体・特定経由なし」のままにしてください（全体の集計には含まれます）。</div>' +
       '<button data-action="add-cost">追加</button></div>';
-    var rowsHtml = list.length === 0 ? '<tr><td colspan="6" style="color:var(--gray);">まだデータがありません</td></tr>' :
-      list.slice().sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); }).map(function (e) {
-        return "<tr><td>" + esc(e.date) + "</td><td>" + esc(CATEGORY_LABEL[e.category] || e.category) + "</td><td>" + esc(e.method) +
+    var rowsHtml = list.length === 0 ? '<tr><td colspan="7" style="color:var(--gray);">まだデータがありません</td></tr>' :
+      list.slice().sort(function (a, b) { return (b.invoiceDate || "").localeCompare(a.invoiceDate || ""); }).map(function (e) {
+        return "<tr><td>" + esc(e.invoiceDate) + "</td><td>" + esc(e.dueDate || "―") + "</td><td>" + esc(CATEGORY_LABEL[e.category] || e.category) + "</td><td>" + esc(e.method) +
           "</td><td>" + esc(e.channel || "―") + "</td><td>" + fmtYen(e.amount) + "</td><td>" +
           (admin ? '<button class="ghost" data-del="' + esc(e.id) + '">削除</button>' : "") + "</td></tr>";
       }).join("");
@@ -1526,7 +1541,7 @@
       return "<tr><td>" + esc(key) + "</td><td>" + esc(s.status) + "</td><td>" + esc(s.count) + "</td></tr>";
     }).join("");
     return formHtml +
-      '<div class="card"><h2>コスト実績一覧</h2><table><thead><tr><th>日付</th><th>分類</th><th>コストのかけ方</th><th>経由</th><th>金額</th><th></th></tr></thead><tbody>' + rowsHtml + "</tbody></table></div>" +
+      '<div class="card"><h2>コスト実績一覧</h2><table><thead><tr><th>請求日</th><th>振込期日</th><th>分類</th><th>コストのかけ方</th><th>経由</th><th>金額</th><th></th></tr></thead><tbody>' + rowsHtml + "</tbody></table></div>" +
       '<div class="card"><h2>/api/data 取得状況（参考）</h2><table><thead><tr><th>ソース</th><th>状態</th><th>件数</th></tr></thead><tbody>' + statusRows + "</tbody></table></div>";
   }
 
@@ -1577,10 +1592,15 @@
       }).then(function (res) {
         var text = res.data.text || "";
         var parsed = parseInvoiceText(text);
-        if (parsed.date) document.getElementById("f_date").value = parsed.date;
+        if (parsed.invoiceDate) document.getElementById("f_invoice_date").value = parsed.invoiceDate;
+        if (parsed.dueDate) document.getElementById("f_due_date").value = parsed.dueDate;
         if (parsed.amount != null) document.getElementById("f_amount").value = parsed.amount;
-        var foundText = (parsed.date ? "日付" : "") + (parsed.date && parsed.amount != null ? "・" : "") + (parsed.amount != null ? "金額" : "");
-        statusEl.innerHTML = (foundText ? esc(foundText) + "欄を自動入力しました。" : "日付・金額を自動検出できませんでした。") +
+        var foundParts = [];
+        if (parsed.invoiceDate) foundParts.push("請求日");
+        if (parsed.dueDate) foundParts.push("振込期日");
+        if (parsed.amount != null) foundParts.push("金額");
+        var foundText = foundParts.join("・");
+        statusEl.innerHTML = (foundText ? esc(foundText) + "欄を自動入力しました。" : "請求日・振込期日・金額を自動検出できませんでした。") +
           "内容は必ず目で確認してから登録してください。" +
           '<details style="margin-top:4px;"><summary style="cursor:pointer;">読み取った全文を見る</summary><pre style="white-space:pre-wrap;font-size:10.5px;max-height:200px;overflow:auto;">' + esc(text) + "</pre></details>";
         ocrBtn.disabled = false;
@@ -1617,13 +1637,14 @@
     var addBtn = e.target.closest('[data-action="add-cost"]');
     if (addBtn) {
       var body = {
-        date: document.getElementById("f_date").value,
+        invoiceDate: document.getElementById("f_invoice_date").value,
+        dueDate: document.getElementById("f_due_date").value,
         method: document.getElementById("f_method").value,
         channel: document.getElementById("f_channel").value,
         category: document.getElementById("f_category").value,
         amount: document.getElementById("f_amount").value
       };
-      if (!body.date || !body.amount) { showStatus("日付と金額は必須です。", "err"); return; }
+      if (!body.invoiceDate || !body.amount) { showStatus("請求日と金額は必須です。", "err"); return; }
       showStatus("追加中...", "loading");
       fetch(WORKER_BASE_URL + "/api/costs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
         .then(checkResponse)
