@@ -82,6 +82,10 @@
   table.data-table thead th:first-child{z-index:3;}
   table.data-table tr.rate-row td{color:var(--gray);font-size:11px;}
   table.data-table td.total-col,table.data-table th.total-col{background:var(--accent-tint);font-weight:800;}
+  /* 月別KPI目標タブ：ラベル列の右隣に固定した「合計」列。ラベル列の幅を固定してleftをそろえる */
+  table.targets-table th:first-child,table.targets-table td:first-child{width:210px;min-width:210px;max-width:210px;white-space:normal;}
+  table.targets-table th:nth-child(2),table.targets-table td:nth-child(2){position:sticky;left:210px;z-index:1;}
+  table.targets-table thead th:nth-child(2){z-index:3;}
 
   .admin-bar{display:flex;align-items:center;gap:14px;}
   .admin-bar-text{display:flex;flex-direction:column;gap:2px;}
@@ -1228,7 +1232,7 @@
       row("社数目標（社）", "companyCount", 1, { sumTotal: true }) +
       computedRow("→ 同時登録売上目標（自動計算）", targetConcRevenueOf);
     return '<div class="note">' + (admin ? "編集するとDashboardの達成率に即時反映されます（フォーカスを外すと自動保存）。費用目標＝登録目標×1人当たりのコスト、同時登録売上目標＝登録目標×同時登録率×平均単価×社数、で自動計算されます。「合計」は年度12ヶ月分の単純合計です（率・単価の行は合計の意味が無いため「―」表示）。" : "編集するには管理者モードをONにしてください。") + "</div>" +
-      '<div class="table-wrap"><table class="data-table"><thead>' + thead + "</thead><tbody>" + tbody + "</tbody></table></div>";
+      '<div class="table-wrap"><table class="data-table targets-table"><thead>' + thead + "</thead><tbody>" + tbody + "</tbody></table></div>";
   }
 
   function renderEventTargetsTab() {
