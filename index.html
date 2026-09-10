@@ -628,16 +628,22 @@
       cells.push(isCount ? fmtInt(total) : fmtYen(total));
       return { label: label, cells: cells };
     }
-    // 前年比較トグルON時、月ごと・合計それぞれの前年同期比（%）を1行追加する
-    function yoyRow(label, fn) {
+    // 前年比較トグルON時、月ごと・合計それぞれに前年実績と前年比（%）を1行追加する
+    function yoyRow(label, fn, isYen) {
+      function fmt(n) { return isYen ? fmtYen(n) : fmtInt(n); }
+      function cell(c, p) {
+        if (!p) return "―";
+        var pct = ((c - p) / p) * 100;
+        return fmt(p) + "（" + (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%）";
+      }
       var cells = [], curTotal = 0, priorTotal = 0;
       for (var i = 0; i < 12; i++) {
         if (i > upToIdx) { cells.push("―"); continue; }
         var c = fn(months, i), p = fn(priorMonths, i);
         curTotal += c; priorTotal += p;
-        cells.push(p ? ((c >= p ? "+" : "") + (((c - p) / p) * 100).toFixed(1) + "%") : "―");
+        cells.push(cell(c, p));
       }
-      cells.push(priorTotal ? ((curTotal >= priorTotal ? "+" : "") + (((curTotal - priorTotal) / priorTotal) * 100).toFixed(1) + "%") : "―");
+      cells.push(cell(curTotal, priorTotal));
       return { label: label, cells: cells, isRate: true };
     }
     var rows = [
@@ -659,11 +665,11 @@
     rows.push({ label: "登録CPA", cells: cpaRegCells });
     rows.push({ label: "最終CPA", cells: finalCpaCells });
     if (priorMonths) {
-      rows.push(yoyRow("→ 集客コスト計 前年比", function (m, i) { return m[i].cost; }));
-      rows.push(yoyRow("→ 登録数 前年比", function (m, i) { return m[i].regSet.size; }));
-      rows.push(yoyRow("→ 登録CPA 前年比", function (m, i) { var mc = m[i].cost, mreg = m[i].regSet.size; return mc > 0 && mreg ? mc / mreg : 0; }));
+      rows.push(yoyRow("→ 集客コスト計 前年比", function (m, i) { return m[i].cost; }, true));
+      rows.push(yoyRow("→ 登録数 前年比", function (m, i) { return m[i].regSet.size; }, false));
+      rows.push(yoyRow("→ 登録CPA 前年比", function (m, i) { var mc = m[i].cost, mreg = m[i].regSet.size; return mc > 0 && mreg ? mc / mreg : 0; }, true));
     }
-    var note = "合計は表示対象月までの累計です。" + (priorMonths ? " 「前年比」は同じ月の前年実績に対する増減率です。" : "");
+    var note = "合計は表示対象月までの累計です。" + (priorMonths ? " 「前年比」の行は「前年実績（増減率）」の形式です。" : "");
     return '<div class="note">' + note + '</div>' + buildTableHtml(cols, rows, { totalColIndex: 12 });
   }
 
@@ -676,7 +682,9 @@
       for (var i = 0; i < 12; i++) {
         if (i > upToIdx) { cells.push("―"); continue; }
         var c = fn(cohorts, i), p = fn(priorCohorts, i);
-        cells.push(p ? ((c >= p ? "+" : "") + (((c - p) / p) * 100).toFixed(1) + "%") : "―");
+        if (!p) { cells.push("―"); continue; }
+        var pct = ((c - p) / p) * 100;
+        cells.push(fmtInt(p) + "（" + (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%）");
       }
       return { label: label, cells: cells, isRate: true };
     }
@@ -705,18 +713,20 @@
       rows.push(yoyRow("→ 参加確定ユニーク 前年比", function (c, i) { return c[i].confSet.size; }));
     }
     var note = "応募・参加確定・当日参加は「その月に登録した学生」のその後全期間の累計です（発生月ではなく登録月で束ねています）。コストは登録月自身の投資コストをそのまま割り当てており、学生ごとの按分ではありません。" +
-      (priorCohorts ? " 「前年比」は同じ登録月コホートの前年実績に対する増減率です。" : "");
+      (priorCohorts ? " 「前年比」の行は同じ登録月コホートの「前年実績（増減率）」の形式です。" : "");
     return '<div class="note">' + note + '</div>' + buildTableHtml(cols, rows);
   }
 
   function renderAnnualPage(months, upToIdx, channelMode, priorMonths) {
     // このテーブルには合計列が無いため、YoY行も月別12セルのみ
-    function yoyRow(label, fn) {
+    function yoyRow(label, fn, isYen) {
       var cells = [];
       for (var i = 0; i < 12; i++) {
         if (i > upToIdx) { cells.push("―"); continue; }
         var c = fn(months, i), p = fn(priorMonths, i);
-        cells.push(p ? ((c >= p ? "+" : "") + (((c - p) / p) * 100).toFixed(1) + "%") : "―");
+        if (!p) { cells.push("―"); continue; }
+        var pct = ((c - p) / p) * 100;
+        cells.push((isYen ? fmtYen(p) : fmtInt(p)) + "（" + (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%）");
       }
       return { label: label, cells: cells, isRate: true };
     }
@@ -749,13 +759,13 @@
     );
     if (!channelMode) rows.push({ label: "同時登録売上", cells: monthCells(function (i) { return months[i].concRevenue; }, true, null, upToIdx) });
     if (priorMonths) {
-      rows.push(yoyRow("→ 費用 前年比", function (m, i) { return m[i].cost; }));
-      rows.push(yoyRow("→ 登録 前年比", function (m, i) { return m[i].regSet.size; }));
-      rows.push(yoyRow("→ 登録CPA 前年比", function (m, i) { var c = m[i].cost, reg = m[i].regSet.size; return c > 0 && reg ? c / reg : 0; }));
+      rows.push(yoyRow("→ 費用 前年比", function (m, i) { return m[i].cost; }, true));
+      rows.push(yoyRow("→ 登録 前年比", function (m, i) { return m[i].regSet.size; }, false));
+      rows.push(yoyRow("→ 登録CPA 前年比", function (m, i) { var c = m[i].cost, reg = m[i].regSet.size; return c > 0 && reg ? c / reg : 0; }, true));
     }
     var note = "UUは暫定値として登録数と同値。総応募・総参加は年度開始（12月）からの累計。" +
       (channelMode ? " 経由選択時の費用・CPAは、コスト実績の「経由」欄が一致するものだけを集計しています。最終CPA・同時登録売上は経由に紐付けられないため非表示です。" : "") +
-      (priorMonths ? " 「前年比」は同じ月の前年実績に対する増減率です。" : "");
+      (priorMonths ? " 「前年比」の行は「前年実績（増減率）」の形式です。" : "");
     return '<div class="note">' + note + '</div>' + buildTableHtml(MONTH_LABELS, rows);
   }
 
@@ -1186,7 +1196,8 @@
     var pct = priorV ? diff / priorV : null;
     var sign = diff > 0 ? "+" : "";
     var color = diff > 0 ? "var(--accent)" : diff < 0 ? "var(--red)" : "var(--gray)";
-    return '<div style="font-size:10.5px;color:' + color + ';margin-top:2px;">前年比 ' + sign + (isYen ? fmtYen(diff) : fmtInt(diff)) + (pct != null ? "（" + sign + (pct * 100).toFixed(1) + "%）" : "") + "</div>";
+    return '<div style="font-size:10px;color:var(--gray);margin-top:2px;">昨年 ' + (isYen ? fmtYen(priorV) : fmtInt(priorV)) + "</div>" +
+      '<div style="font-size:10.5px;color:' + color + ';">前年比 ' + sign + (isYen ? fmtYen(diff) : fmtInt(diff)) + (pct != null ? "（" + sign + (pct * 100).toFixed(1) + "%）" : "") + "</div>";
   }
 
   function renderNav() {
