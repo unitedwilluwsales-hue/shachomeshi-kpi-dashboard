@@ -111,6 +111,9 @@
   <div class="card" id="fiscalYearCard" style="display:none;">
     <label style="font-size:11px;color:var(--gray);font-weight:700;display:block;margin-bottom:4px;">年度</label>
     <select id="fiscalYearSelect" style="width:100%;"></select>
+    <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;margin-top:8px;cursor:pointer;">
+      <input type="checkbox" id="yoyCompareToggle">前年比較を表示
+    </label>
   </div>
   <div class="card">
     <div class="nav-row" id="navRow"></div>
@@ -408,7 +411,7 @@
   // ---- 描画 ----
   var chartState = { metrics: ["reg"] };
 
-  function renderKpis(t, tt) {
+  function renderKpis(t, tt, priorT) {
     // cost=0は「無料で獲得できた」ではなく「まだコストが未入力」を意味するため、
     // その場合はCPA系を全て「―」にする（0円やマイナスのCPAを誤解を招く形で出さない）。
     var hasCost = t.cost > 0;
@@ -434,18 +437,24 @@
     var finalCpaTarget = tt.reg ? (tt.cost - tt.concRevenue) / tt.reg : 0;
 
     var primaryCards = [
-      { label: "費用", value: fmtYen(t.cost), sub: costSub },
-      { label: "登録数", value: fmtInt(t.reg), sub: subCount(t.reg, tt.reg) },
-      { label: "応募数（件数）", value: fmtInt(t.appCount) },
-      { label: "参加確定数（件数）", value: fmtInt(t.confCount) },
-      { label: "当日参加数（件数）", value: fmtInt(t.attCount) }
+      { label: "費用", value: fmtYen(t.cost), sub: costSub + yoySubHtml(t.cost, priorT ? priorT.cost : null, true) },
+      { label: "登録数", value: fmtInt(t.reg), sub: subCount(t.reg, tt.reg) + yoySubHtml(t.reg, priorT ? priorT.reg : null, false) },
+      { label: "応募数（件数）", value: fmtInt(t.appCount), sub: yoySubHtml(t.appCount, priorT ? priorT.appCount : null, false) },
+      { label: "参加確定数（件数）", value: fmtInt(t.confCount), sub: yoySubHtml(t.confCount, priorT ? priorT.confCount : null, false) },
+      { label: "当日参加数（件数）", value: fmtInt(t.attCount), sub: yoySubHtml(t.attCount, priorT ? priorT.attCount : null, false) }
     ];
+    var priorHasCost = priorT && priorT.cost > 0;
+    var priorCpaReg = priorHasCost ? safeDiv(priorT.cost, priorT.reg) : null;
+    var priorCpaApp = priorHasCost ? safeDiv(priorT.cost, priorT.appCount) : null;
+    var priorCpaConf = priorHasCost ? safeDiv(priorT.cost, priorT.confCount) : null;
+    var priorCpaAtt = priorHasCost ? safeDiv(priorT.cost, priorT.attCount) : null;
+    var priorFinalCpa = priorHasCost && priorT.reg ? (priorT.cost - priorT.concRevenue) / priorT.reg : null;
     var cpaCards = [
-      { label: "登録CPA", value: cpaReg == null ? "―" : fmtYen(cpaReg), sub: subCpa(cpaReg, cpaRegTarget) },
-      { label: "応募CPA", value: cpaApp == null ? "―" : fmtYen(cpaApp) },
-      { label: "参加確定CPA", value: cpaConf == null ? "―" : fmtYen(cpaConf) },
-      { label: "当日参加CPA", value: cpaAtt == null ? "―" : fmtYen(cpaAtt) },
-      { label: "最終CPA", value: finalCpa == null ? "―" : fmtYen(finalCpa), sub: subCpa(finalCpa, finalCpaTarget) }
+      { label: "登録CPA", value: cpaReg == null ? "―" : fmtYen(cpaReg), sub: subCpa(cpaReg, cpaRegTarget) + yoySubHtml(cpaReg, priorCpaReg, true) },
+      { label: "応募CPA", value: cpaApp == null ? "―" : fmtYen(cpaApp), sub: yoySubHtml(cpaApp, priorCpaApp, true) },
+      { label: "参加確定CPA", value: cpaConf == null ? "―" : fmtYen(cpaConf), sub: yoySubHtml(cpaConf, priorCpaConf, true) },
+      { label: "当日参加CPA", value: cpaAtt == null ? "―" : fmtYen(cpaAtt), sub: yoySubHtml(cpaAtt, priorCpaAtt, true) },
+      { label: "最終CPA", value: finalCpa == null ? "―" : fmtYen(finalCpa), sub: subCpa(finalCpa, finalCpaTarget) + yoySubHtml(finalCpa, priorFinalCpa, true) }
     ];
     function renderCardGroup(elId, cards) {
       document.getElementById(elId).innerHTML = cards.map(function (c) {
@@ -607,7 +616,7 @@
     return '<div class="note">掲載数はイベントマスタ未接続のため省略しています。表示対象の月より先は実績がまだ無いため「―」表示です。</div>' + buildTableHtml(MONTH_LABELS, rows);
   }
 
-  function renderRoiPage(months, upToIdx) {
+  function renderRoiPage(months, upToIdx, priorMonths) {
     var cols = MONTH_LABELS.concat(["合計"]);
     function rowWithTotal(label, fn, isCount) {
       var cells = [], total = 0;
@@ -618,6 +627,18 @@
       }
       cells.push(isCount ? fmtInt(total) : fmtYen(total));
       return { label: label, cells: cells };
+    }
+    // 前年比較トグルON時、月ごと・合計それぞれの前年同期比（%）を1行追加する
+    function yoyRow(label, fn) {
+      var cells = [], curTotal = 0, priorTotal = 0;
+      for (var i = 0; i < 12; i++) {
+        if (i > upToIdx) { cells.push("―"); continue; }
+        var c = fn(months, i), p = fn(priorMonths, i);
+        curTotal += c; priorTotal += p;
+        cells.push(p ? ((c >= p ? "+" : "") + (((c - p) / p) * 100).toFixed(1) + "%") : "―");
+      }
+      cells.push(priorTotal ? ((curTotal >= priorTotal ? "+" : "") + (((curTotal - priorTotal) / priorTotal) * 100).toFixed(1) + "%") : "―");
+      return { label: label, cells: cells, isRate: true };
     }
     var rows = [
       rowWithTotal("送客費", function (i) { return months[i].costBreakdown.send; }),
@@ -637,11 +658,28 @@
     cpaRegCells.push("―"); finalCpaCells.push("―"); // 合計列のCPAは出さない
     rows.push({ label: "登録CPA", cells: cpaRegCells });
     rows.push({ label: "最終CPA", cells: finalCpaCells });
-    return '<div class="note">合計は表示対象月までの累計です。</div>' + buildTableHtml(cols, rows, { totalColIndex: 12 });
+    if (priorMonths) {
+      rows.push(yoyRow("→ 集客コスト計 前年比", function (m, i) { return m[i].cost; }));
+      rows.push(yoyRow("→ 登録数 前年比", function (m, i) { return m[i].regSet.size; }));
+      rows.push(yoyRow("→ 登録CPA 前年比", function (m, i) { var mc = m[i].cost, mreg = m[i].regSet.size; return mc > 0 && mreg ? mc / mreg : 0; }));
+    }
+    var note = "合計は表示対象月までの累計です。" + (priorMonths ? " 「前年比」は同じ月の前年実績に対する増減率です。" : "");
+    return '<div class="note">' + note + '</div>' + buildTableHtml(cols, rows, { totalColIndex: 12 });
   }
 
-  function renderCohortPage(sources, fiscalStartYear, months, upToIdx) {
+  function renderCohortPage(sources, fiscalStartYear, months, upToIdx, priorMonths) {
     var cohorts = buildCohortAgg(sources, fiscalStartYear);
+    var priorCohorts = priorMonths ? buildCohortAgg(sources, fiscalStartYear - 1) : null;
+    // このテーブルには合計列が無いため、YoY行も月別の12セルのみ（合計セルは追加しない）
+    function yoyRow(label, fn) {
+      var cells = [];
+      for (var i = 0; i < 12; i++) {
+        if (i > upToIdx) { cells.push("―"); continue; }
+        var c = fn(cohorts, i), p = fn(priorCohorts, i);
+        cells.push(p ? ((c >= p ? "+" : "") + (((c - p) / p) * 100).toFixed(1) + "%") : "―");
+      }
+      return { label: label, cells: cells, isRate: true };
+    }
     var cols = MONTH_LABELS.map(function (l) { return l + "コホート"; });
     var rows = [
       { label: "コスト", cells: monthCells(function (i) { return months[i].cost; }, true, null, upToIdx) },
@@ -662,10 +700,26 @@
       { label: "同時登録売上", cells: monthCells(function (i) { return months[i].concRevenue; }, true, null, upToIdx) },
       { label: "最終CPA", cells: monthCells(function (i) { var c = months[i].cost; return c > 0 && cohorts[i].reg ? (c - months[i].concRevenue) / cohorts[i].reg : null; }, true, null, upToIdx) }
     ];
-    return '<div class="note">応募・参加確定・当日参加は「その月に登録した学生」のその後全期間の累計です（発生月ではなく登録月で束ねています）。コストは登録月自身の投資コストをそのまま割り当てており、学生ごとの按分ではありません。</div>' + buildTableHtml(cols, rows);
+    if (priorCohorts) {
+      rows.push(yoyRow("→ 登録数 前年比", function (c, i) { return c[i].reg; }));
+      rows.push(yoyRow("→ 参加確定ユニーク 前年比", function (c, i) { return c[i].confSet.size; }));
+    }
+    var note = "応募・参加確定・当日参加は「その月に登録した学生」のその後全期間の累計です（発生月ではなく登録月で束ねています）。コストは登録月自身の投資コストをそのまま割り当てており、学生ごとの按分ではありません。" +
+      (priorCohorts ? " 「前年比」は同じ登録月コホートの前年実績に対する増減率です。" : "");
+    return '<div class="note">' + note + '</div>' + buildTableHtml(cols, rows);
   }
 
-  function renderAnnualPage(months, upToIdx, channelMode) {
+  function renderAnnualPage(months, upToIdx, channelMode, priorMonths) {
+    // このテーブルには合計列が無いため、YoY行も月別12セルのみ
+    function yoyRow(label, fn) {
+      var cells = [];
+      for (var i = 0; i < 12; i++) {
+        if (i > upToIdx) { cells.push("―"); continue; }
+        var c = fn(months, i), p = fn(priorMonths, i);
+        cells.push(p ? ((c >= p ? "+" : "") + (((c - p) / p) * 100).toFixed(1) + "%") : "―");
+      }
+      return { label: label, cells: cells, isRate: true };
+    }
     var cumApp = 0, cumConf = 0;
     var cumAppArr = [], cumConfArr = [];
     for (var i = 0; i < 12; i++) {
@@ -694,8 +748,14 @@
       { label: "総参加（累計）", cells: cumConfArr.map(function (v) { return v == null ? "―" : fmtInt(v); }) }
     );
     if (!channelMode) rows.push({ label: "同時登録売上", cells: monthCells(function (i) { return months[i].concRevenue; }, true, null, upToIdx) });
+    if (priorMonths) {
+      rows.push(yoyRow("→ 費用 前年比", function (m, i) { return m[i].cost; }));
+      rows.push(yoyRow("→ 登録 前年比", function (m, i) { return m[i].regSet.size; }));
+      rows.push(yoyRow("→ 登録CPA 前年比", function (m, i) { var c = m[i].cost, reg = m[i].regSet.size; return c > 0 && reg ? c / reg : 0; }));
+    }
     var note = "UUは暫定値として登録数と同値。総応募・総参加は年度開始（12月）からの累計。" +
-      (channelMode ? " 経由選択時の費用・CPAは、コスト実績の「経由」欄が一致するものだけを集計しています。最終CPA・同時登録売上は経由に紐付けられないため非表示です。" : "");
+      (channelMode ? " 経由選択時の費用・CPAは、コスト実績の「経由」欄が一致するものだけを集計しています。最終CPA・同時登録売上は経由に紐付けられないため非表示です。" : "") +
+      (priorMonths ? " 「前年比」は同じ月の前年実績に対する増減率です。" : "");
     return '<div class="note">' + note + '</div>' + buildTableHtml(MONTH_LABELS, rows);
   }
 
@@ -768,11 +828,13 @@
     }
 
     var cardsHtml = "";
-    if (priorYearMonths) {
-      cardsHtml += buildCard("前年同月　" + esc(MONTH_LABELS[centerIdx]), false,
-        function (key) { return metricValue(priorYearMonths, centerIdx, key); }, null, null, null);
-    } else {
-      cardsHtml += buildCard("前年同月", false, null, null, null, "前年度のデータがありません");
+    if (state.yoyCompare) {
+      if (priorYearMonths) {
+        cardsHtml += buildCard("前年同月　" + esc(MONTH_LABELS[centerIdx]), false,
+          function (key) { return metricValue(priorYearMonths, centerIdx, key); }, null, null, null);
+      } else {
+        cardsHtml += buildCard("前年同月", false, null, null, null, "前年度のデータがありません");
+      }
     }
     var idxs = [centerIdx - 1, centerIdx, centerIdx + 1];
     var colNames = ["前月", "当月", "翌月"];
@@ -795,8 +857,8 @@
         null
       );
     }
-    var html = '<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);">' + cardsHtml + "</div>";
-    var note = "対象月セレクターで選んだ月を「当月」として、前年同月・前月・翌月と比較します（当月カードには前月比・前年同月比の両方を表示）。" +
+    var html = '<div class="kpi-grid" style="grid-template-columns:repeat(' + (state.yoyCompare ? 4 : 3) + ',1fr);">' + cardsHtml + "</div>";
+    var note = "対象月セレクターで選んだ月を「当月」として、" + (state.yoyCompare ? "前年同月・" : "") + "前月・翌月と比較します" + (state.yoyCompare ? "（当月カードには前月比・前年同月比の両方を表示）。" : "。サイドバーの「前年比較を表示」をONにすると前年同月も並べて表示できます。") +
       (channelMode ? " 経由選択時の費用・CPAは、コスト実績の「経由」欄が一致するものだけを集計しています。最終CPAは経由に紐付けられないため非表示です。" : "");
     return '<div class="note">' + note + '</div>' + html;
   }
@@ -1007,23 +1069,31 @@
     var cpaConf = hasCost ? safeDiv(t.cost, t.confCount) : null;
     var cpaAtt = hasCost ? safeDiv(t.cost, t.attCount) : null;
 
+    var priorChMonths = getPriorYearMonths(state.channelFilter);
+    var priorT = priorChMonths ? totals(priorChMonths, upToIdx) : null;
+    var priorHasCost = priorT && priorT.cost > 0;
+    var priorCpaReg = priorHasCost ? safeDiv(priorT.cost, priorT.reg) : null;
+    var priorCpaApp = priorHasCost ? safeDiv(priorT.cost, priorT.appCount) : null;
+    var priorCpaConf = priorHasCost ? safeDiv(priorT.cost, priorT.confCount) : null;
+    var priorCpaAtt = priorHasCost ? safeDiv(priorT.cost, priorT.attCount) : null;
+
     function kpiCardsHtml(cards, cols) {
       return '<div class="kpi-grid" style="grid-template-columns:repeat(' + cols + ',1fr);">' + cards.map(function (c) {
         var dim = c.value === "―" ? " dim" : "";
-        return '<div class="kpi-card"><div class="kpi-label">' + esc(c.label) + '</div><div class="kpi-value' + dim + '">' + esc(c.value) + "</div></div>";
+        return '<div class="kpi-card"><div class="kpi-label">' + esc(c.label) + '</div><div class="kpi-value' + dim + '">' + esc(c.value) + "</div>" + (c.sub || "") + "</div>";
       }).join("") + "</div>";
     }
     var kpiHtml = kpiCardsHtml([
-      { label: "費用", value: fmtYen(t.cost) },
-      { label: "登録数", value: fmtInt(t.reg) },
-      { label: "応募数（件数）", value: fmtInt(t.appCount) },
-      { label: "参加確定数（件数）", value: fmtInt(t.confCount) },
-      { label: "当日参加数（件数）", value: fmtInt(t.attCount) }
+      { label: "費用", value: fmtYen(t.cost), sub: yoySubHtml(t.cost, priorT ? priorT.cost : null, true) },
+      { label: "登録数", value: fmtInt(t.reg), sub: yoySubHtml(t.reg, priorT ? priorT.reg : null, false) },
+      { label: "応募数（件数）", value: fmtInt(t.appCount), sub: yoySubHtml(t.appCount, priorT ? priorT.appCount : null, false) },
+      { label: "参加確定数（件数）", value: fmtInt(t.confCount), sub: yoySubHtml(t.confCount, priorT ? priorT.confCount : null, false) },
+      { label: "当日参加数（件数）", value: fmtInt(t.attCount), sub: yoySubHtml(t.attCount, priorT ? priorT.attCount : null, false) }
     ], 5) + '<div class="kpi-group-label">CPA（この経由にコスト実績で紐付けられた費用のみ）</div>' + kpiCardsHtml([
-      { label: "登録CPA", value: cpaReg == null ? "―" : fmtYen(cpaReg) },
-      { label: "応募CPA", value: cpaApp == null ? "―" : fmtYen(cpaApp) },
-      { label: "参加確定CPA", value: cpaConf == null ? "―" : fmtYen(cpaConf) },
-      { label: "当日参加CPA", value: cpaAtt == null ? "―" : fmtYen(cpaAtt) }
+      { label: "登録CPA", value: cpaReg == null ? "―" : fmtYen(cpaReg), sub: yoySubHtml(cpaReg, priorCpaReg, true) },
+      { label: "応募CPA", value: cpaApp == null ? "―" : fmtYen(cpaApp), sub: yoySubHtml(cpaApp, priorCpaApp, true) },
+      { label: "参加確定CPA", value: cpaConf == null ? "―" : fmtYen(cpaConf), sub: yoySubHtml(cpaConf, priorCpaConf, true) },
+      { label: "当日参加CPA", value: cpaAtt == null ? "―" : fmtYen(cpaAtt), sub: yoySubHtml(cpaAtt, priorCpaAtt, true) }
     ], 4);
 
     var chartHtml = buildTrendChartHtml(chMonths, upToIdx, state.channelChartMetrics, "channel");
@@ -1097,9 +1167,27 @@
   var state = {
     page: "dashboard", centerIdx: null, targets: {}, channelFilter: null, channelChartMetrics: ["reg"],
     annualChannelFilter: "__all__", monthCompareChannelFilter: "__all__",
-    fiscalStartYear: null, graduationYearFilter: "__all__"
+    fiscalStartYear: null, graduationYearFilter: "__all__", yoyCompare: false
   };
   var lastAgg = null; // { sources, fiscalStartYear, agg, upToIdx }
+
+  // 前年比較トグルがONの時だけ、前年度の月別集計を返す（OFF・前年度データ無しならnull）。
+  // channelを渡すとその経由に絞った前年集計を返す（経由別内訳・年間管理・月間管理の経由フィルタ用）。
+  function getPriorYearMonths(channel) {
+    if (!state.yoyCompare || !lastAgg) return null;
+    var priorFiscalYear = lastAgg.fiscalStartYear - 1;
+    if (listFiscalYears(lastAgg.rawSources).indexOf(priorFiscalYear) === -1) return null;
+    return channel ? aggregateByChannel(lastAgg.sources, priorFiscalYear, channel) : aggregate(lastAgg.sources, priorFiscalYear).months;
+  }
+  // 実績値vs前年実績値のYoY差分・増減率をラベル付きHTMLで返す（無ければ空文字）
+  function yoySubHtml(v, priorV, isYen) {
+    if (v == null || priorV == null) return "";
+    var diff = v - priorV;
+    var pct = priorV ? diff / priorV : null;
+    var sign = diff > 0 ? "+" : "";
+    var color = diff > 0 ? "var(--accent)" : diff < 0 ? "var(--red)" : "var(--gray)";
+    return '<div style="font-size:10.5px;color:' + color + ';margin-top:2px;">前年比 ' + sign + (isYen ? fmtYen(diff) : fmtInt(diff)) + (pct != null ? "（" + sign + (pct * 100).toFixed(1) + "%）" : "") + "</div>";
+  }
 
   function renderNav() {
     document.getElementById("navRow").innerHTML = NAV_PAGES.map(function (p) {
@@ -1161,7 +1249,9 @@
         graduationYearFilterSelectHtml("graduationYearSelect", listGraduationYears(lastAgg.rawSources), state.graduationYearFilter);
       var t = totals(months, upToIdx);
       var tt = computeTargetTotals(state.targets || {}, lastAgg.fiscalStartYear, upToIdx);
-      renderKpis(t, tt);
+      var priorMonthsDash = getPriorYearMonths();
+      var priorT = priorMonthsDash ? totals(priorMonthsDash, upToIdx) : null;
+      renderKpis(t, tt, priorT);
       renderCostRow(t);
       renderFunnel(t);
       document.getElementById("chartCardBody").innerHTML = buildTrendChartHtml(months, upToIdx, chartState.metrics, "dashboard");
@@ -1191,33 +1281,30 @@
     if (state.page === "monthly-actual") {
       document.getElementById("tablePageContent").innerHTML = renderMonthlyActualPage(months, upToIdx);
     } else if (state.page === "roi") {
-      document.getElementById("tablePageContent").innerHTML = renderRoiPage(months, upToIdx);
+      document.getElementById("tablePageContent").innerHTML = renderRoiPage(months, upToIdx, getPriorYearMonths());
     } else if (state.page === "cohort") {
-      document.getElementById("tablePageContent").innerHTML = renderCohortPage(lastAgg.sources, lastAgg.fiscalStartYear, months, upToIdx);
+      document.getElementById("tablePageContent").innerHTML = renderCohortPage(lastAgg.sources, lastAgg.fiscalStartYear, months, upToIdx, getPriorYearMonths());
     } else if (state.page === "annual") {
       var annualChannels = listChannels(lastAgg.sources);
       var annualFiltered = state.annualChannelFilter !== "__all__" && annualChannels.indexOf(state.annualChannelFilter) !== -1;
       if (!annualFiltered) state.annualChannelFilter = "__all__";
       var annualMonths = annualFiltered ? aggregateByChannel(lastAgg.sources, lastAgg.fiscalStartYear, state.annualChannelFilter) : months;
+      var annualPriorMonths = getPriorYearMonths(annualFiltered ? state.annualChannelFilter : null);
       var annualCompareHtml = annualChannels.length === 0 ? "" :
         '<div class="kpi-group-label" style="margin-top:18px;">経由比較（年度累計）</div>' +
         buildChannelCompareTable(lastAgg.sources, lastAgg.fiscalStartYear, annualChannels, 0, upToIdx);
       document.getElementById("tablePageContent").innerHTML =
         channelFilterSelectHtml("annualChannelSelect", annualChannels, state.annualChannelFilter) +
         graduationYearFilterSelectHtml("graduationYearSelect", listGraduationYears(lastAgg.rawSources), state.graduationYearFilter) +
-        renderAnnualPage(annualMonths, upToIdx, annualFiltered) +
+        renderAnnualPage(annualMonths, upToIdx, annualFiltered, annualPriorMonths) +
         annualCompareHtml;
     } else if (state.page === "month-compare") {
       var mcChannels = listChannels(lastAgg.sources);
       var mcFiltered = state.monthCompareChannelFilter !== "__all__" && mcChannels.indexOf(state.monthCompareChannelFilter) !== -1;
       if (!mcFiltered) state.monthCompareChannelFilter = "__all__";
       var mcMonths = mcFiltered ? aggregateByChannel(lastAgg.sources, lastAgg.fiscalStartYear, state.monthCompareChannelFilter) : months;
-      // 前年同月比較用に、前年度分も同じ絞り込み条件（経由・卒業年度）で集計する
-      var priorFiscalYear = lastAgg.fiscalStartYear - 1;
-      var priorYearAvailable = listFiscalYears(lastAgg.rawSources).indexOf(priorFiscalYear) !== -1;
-      var priorYearMonths = priorYearAvailable
-        ? (mcFiltered ? aggregateByChannel(lastAgg.sources, priorFiscalYear, state.monthCompareChannelFilter) : aggregate(lastAgg.sources, priorFiscalYear).months)
-        : null;
+      // 前年同月比較トグルON時のみ、前年度分も同じ絞り込み条件（経由・卒業年度）で集計する
+      var priorYearMonths = getPriorYearMonths(mcFiltered ? state.monthCompareChannelFilter : null);
       var mcCompareHtml = mcChannels.length === 0 ? "" :
         '<div class="kpi-group-label" style="margin-top:18px;">経由比較（' + esc(MONTH_LABELS[state.centerIdx]) + '）</div>' +
         buildChannelCompareTable(lastAgg.sources, lastAgg.fiscalStartYear, mcChannels, state.centerIdx, state.centerIdx);
@@ -1248,6 +1335,10 @@
     state.fiscalStartYear = parseInt(e.target.value, 10);
     state.centerIdx = null; // 年度が変わると月の範囲も変わるため選択中の月をリセット
     renderDashboard(lastSources);
+  });
+  document.getElementById("yoyCompareToggle").addEventListener("change", function (e) {
+    state.yoyCompare = e.target.checked;
+    renderPage();
   });
 
   function renderDashboard(rawSources) {
