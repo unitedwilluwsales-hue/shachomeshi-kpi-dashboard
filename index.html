@@ -108,6 +108,10 @@
 
 <div class="app">
 <div class="sidebar">
+  <div class="card" id="fiscalYearCard" style="display:none;">
+    <label style="font-size:11px;color:var(--gray);font-weight:700;display:block;margin-bottom:4px;">年度</label>
+    <select id="fiscalYearSelect" style="width:100%;"></select>
+  </div>
   <div class="card">
     <div class="nav-row" id="navRow"></div>
   </div>
@@ -116,6 +120,7 @@
 
 <div class="card" id="tablePageCard" style="display:none;">
   <h2 id="tablePageTitle"></h2>
+  <div class="note" id="activeFilterNote" style="display:none;"></div>
   <div class="row" id="monthSelectorRow" style="display:none;max-width:320px;">
     <label>対象月</label>
     <select id="monthSelector"></select>
@@ -231,6 +236,19 @@
     // new Date().getTime() はUTC msなのでそのままjstPartsに渡せる
     var p = jstParts(now.getTime());
     return p.m === 12 ? p.y : p.y - 1;
+  }
+  // 指定タイムスタンプが属する年度の期首年（対象年度を限定しないfiscalIndex()の汎用版）
+  function fiscalStartYearOf(ts) {
+    var p = jstParts(ts);
+    return p.m === 12 ? p.y : p.y - 1;
+  }
+  // データに実在する年度の一覧（新しい順）。年度切替プルダウンの選択肢に使う。
+  function listFiscalYears(sources) {
+    var years = {};
+    (sources.uwStudents.data || []).forEach(function (r) { if (r.registeredAt) years[fiscalStartYearOf(r.registeredAt)] = true; });
+    var arr = Object.keys(years).map(Number);
+    if (arr.indexOf(currentFiscalStartYear()) === -1) arr.push(currentFiscalStartYear());
+    return arr.sort(function (a, b) { return b - a; });
   }
   // ルックアップ型フィールド（配列で返ってくる）を数値として正規化する。
   // 単一要素前提だが、複数要素の場合は保険として合計する。
@@ -704,44 +722,76 @@
     if (key === "finalCpa") return m.cost > 0 && m.regSet.size ? (m.cost - m.concRevenue) / m.regSet.size : null;
     return null;
   }
-  function renderMonthComparePage(months, upToIdx, centerIdx, channelMode) {
-    var idxs = [centerIdx - 1, centerIdx, centerIdx + 1];
-    var colNames = ["前月", "当月", "翌月"];
+  // 月間管理: 前年同月・前月・当月・翌月の4枚カードを並べる。当月カードにだけ前月比・前年同月比の両方を出す。
+  function renderMonthComparePage(months, upToIdx, centerIdx, channelMode, priorYearMonths) {
     var metrics = channelMode ? MC_METRICS.filter(function (m) { return m.key !== "finalCpa"; }) : MC_METRICS;
-    var html = '<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);">';
-    for (var c = 0; c < 3; c++) {
-      var idx = idxs[c];
-      var valid = idx >= 0 && idx <= upToIdx;
-      html += '<div class="card" style="margin-bottom:0;' + (c === 1 ? "border-color:var(--accent);background:var(--accent-tint);" : "") + '">';
-      html += '<div style="font-size:12.5px;font-weight:800;margin-bottom:8px;">' + esc(colNames[c]) + "　" + (idx >= 0 && idx <= 11 ? esc(MONTH_LABELS[idx]) : "") + "</div>";
-      if (!valid) {
-        html += '<div class="note" style="margin:0;">' + (idx > upToIdx ? "まだ実績がありません" : "年度範囲外です") + "</div>";
+
+    function diffLine(v, base, metric, prefix) {
+      var diff = v - base;
+      var pct = base ? diff / base : null;
+      var improved = metric.higherBetter === null ? null : (metric.higherBetter ? diff > 0 : diff < 0);
+      var color = improved === null || diff === 0 ? "var(--gray)" : (improved ? "var(--accent)" : "var(--red)");
+      var sign = diff > 0 ? "+" : "";
+      return '<div style="font-size:10.5px;color:' + color + ';">' + prefix + sign + (metric.isYen ? fmtYen(diff) : fmtInt(diff)) + (pct != null ? " (" + sign + (pct * 100).toFixed(1) + "%)" : "") + "</div>";
+    }
+    // getMomBase/getYoyBaseはnull可（比較対象が無い場合）。invalidReasonがあればカード全体を「データ無し」表示にする。
+    function buildCard(label, highlight, getValue, getMomBase, getYoyBase, invalidReason) {
+      var html = '<div class="card" style="margin-bottom:0;' + (highlight ? "border-color:var(--accent);background:var(--accent-tint);" : "") + '">';
+      html += '<div style="font-size:12.5px;font-weight:800;margin-bottom:8px;">' + label + "</div>";
+      if (invalidReason) {
+        html += '<div class="note" style="margin:0;">' + esc(invalidReason) + "</div>";
       } else {
         metrics.forEach(function (metric) {
-          var v = metricValue(months, idx, metric.key);
+          var v = getValue(metric.key);
           var valueText = v == null ? "―" : (metric.isYen ? fmtYen(v) : fmtInt(v));
-          var momHtml = "";
-          var prevIdx = idx - 1;
-          if (v != null && prevIdx >= 0 && prevIdx <= upToIdx) {
-            var pv = metricValue(months, prevIdx, metric.key);
-            if (pv != null) {
-              var diff = v - pv;
-              var pct = pv ? diff / pv : null;
-              var improved = metric.higherBetter === null ? null : (metric.higherBetter ? diff > 0 : diff < 0);
-              var color = improved === null || diff === 0 ? "var(--gray)" : (improved ? "var(--accent)" : "var(--red)");
-              var sign = diff > 0 ? "+" : "";
-              momHtml = '<div style="font-size:10.5px;color:' + color + ';">' + sign + (metric.isYen ? fmtYen(diff) : fmtInt(diff)) + (pct != null ? " (" + sign + (pct * 100).toFixed(1) + "%)" : "") + "</div>";
-            }
+          var subHtml = "";
+          if (v != null && getMomBase) {
+            var pv = getMomBase(metric.key);
+            if (pv != null) subHtml += diffLine(v, pv, metric, "");
+          }
+          if (v != null && getYoyBase) {
+            var yv = getYoyBase(metric.key);
+            if (yv != null) subHtml += diffLine(v, yv, metric, "前年同月比 ");
           }
           html += '<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--border);padding:6px 0;">' +
             '<span style="font-size:11px;color:var(--gray);">' + esc(metric.label) + "</span>" +
-            '<span style="text-align:right;"><div style="font-weight:800;font-size:13px;">' + esc(valueText) + "</div>" + momHtml + "</span></div>";
+            '<span style="text-align:right;"><div style="font-weight:800;font-size:13px;">' + esc(valueText) + "</div>" + subHtml + "</span></div>";
         });
       }
       html += "</div>";
+      return html;
     }
-    html += "</div>";
-    var note = "対象月セレクターで選んだ月を「当月」として、前月・翌月と比較します。" +
+
+    var cardsHtml = "";
+    if (priorYearMonths) {
+      cardsHtml += buildCard("前年同月　" + esc(MONTH_LABELS[centerIdx]), false,
+        function (key) { return metricValue(priorYearMonths, centerIdx, key); }, null, null, null);
+    } else {
+      cardsHtml += buildCard("前年同月", false, null, null, null, "前年度のデータがありません");
+    }
+    var idxs = [centerIdx - 1, centerIdx, centerIdx + 1];
+    var colNames = ["前月", "当月", "翌月"];
+    for (var c = 0; c < 3; c++) {
+      var idx = idxs[c];
+      var valid = idx >= 0 && idx <= upToIdx;
+      var label = esc(colNames[c]) + "　" + (idx >= 0 && idx <= 11 ? esc(MONTH_LABELS[idx]) : "");
+      if (!valid) {
+        cardsHtml += buildCard(label, c === 1, null, null, null, idx > upToIdx ? "まだ実績がありません" : "年度範囲外です");
+        continue;
+      }
+      var prevIdx = idx - 1;
+      var hasPrev = prevIdx >= 0 && prevIdx <= upToIdx;
+      var isCurrent = c === 1;
+      cardsHtml += buildCard(
+        label, isCurrent,
+        function (key) { return metricValue(months, idx, key); },
+        hasPrev ? function (key) { return metricValue(months, prevIdx, key); } : null,
+        (isCurrent && priorYearMonths) ? function (key) { return metricValue(priorYearMonths, centerIdx, key); } : null,
+        null
+      );
+    }
+    var html = '<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);">' + cardsHtml + "</div>";
+    var note = "対象月セレクターで選んだ月を「当月」として、前年同月・前月・翌月と比較します（当月カードには前月比・前年同月比の両方を表示）。" +
       (channelMode ? " 経由選択時の費用・CPAは、コスト実績の「経由」欄が一致するものだけを集計しています。最終CPAは経由に紐付けられないため非表示です。" : "");
     return '<div class="note">' + note + '</div>' + html;
   }
@@ -815,6 +865,35 @@
     }).join("");
     var table = '<div class="table-wrap"><table class="data-table"><thead>' + thead + "</thead><tbody>" + tbody + "</tbody></table></div>";
     return '<div class="note">' + meta.year + "年" + meta.month + "月の日別実績（土日はグレー背景。祝日判定は未実装）。コスト・同時登録は月間実績を日数で均等割りした参考値です。</div>" + table;
+  }
+
+  // データに実在する卒業年度の一覧（①UW学生リストの「卒業年度」フィールドから）
+  function listGraduationYears(sources) {
+    var counts = {};
+    (sources.uwStudents.data || []).forEach(function (r) {
+      if (r.graduationYear) counts[r.graduationYear] = (counts[r.graduationYear] || 0) + 1;
+    });
+    return Object.keys(counts).sort();
+  }
+  // 卒業年度で学生を絞り込んだ「sources」を作る（他の集計関数はこれを渡せばそのまま卒業年度フィルタが効く）。
+  // 「全体」なら元のsourcesをそのまま返す（コピーコスト無し）。
+  function filterSourcesByGraduationYear(sources, gradYear) {
+    if (!gradYear || gradYear === "__all__") return sources;
+    var allowedIds = {};
+    (sources.uwStudents.data || []).forEach(function (r) { if (r.graduationYear === gradYear) allowedIds[r.studentId] = true; });
+    function filterArr(arr, idField) { return (arr || []).filter(function (r) { return allowedIds[r[idField]]; }); }
+    return {
+      uwStudents: Object.assign({}, sources.uwStudents, { data: filterArr(sources.uwStudents.data, "studentId") }),
+      applications: Object.assign({}, sources.applications, { data: filterArr(sources.applications.data, "studentId") }),
+      shukatsuMeshi: Object.assign({}, sources.shukatsuMeshi, { data: filterArr(sources.shukatsuMeshi.data, "studentKey") }),
+      simultaneousRegistrations: sources.simultaneousRegistrations, // 学生個人に紐付かないため対象外
+      costs: sources.costs
+    };
+  }
+  function graduationYearFilterSelectHtml(id, years, current) {
+    var opts = '<option value="__all__"' + (current === "__all__" ? " selected" : "") + '>全学年</option>' +
+      years.map(function (y) { return '<option value="' + esc(y) + '"' + (y === current ? " selected" : "") + ">" + esc(y) + "</option>"; }).join("");
+    return '<div class="row" style="max-width:320px;"><label>卒業年度</label><select id="graduationYearSelect">' + opts + "</select></div>";
   }
 
   // 学生ID→経由 の対応表（①UW学生リストの「経由」フィールドから）
@@ -902,7 +981,8 @@
 
     var selectHtml = '<div class="row" style="max-width:320px;"><label>経由</label><select id="channelFilterSelect">' +
       channels.map(function (ch) { return '<option value="' + esc(ch) + '"' + (ch === state.channelFilter ? " selected" : "") + ">" + esc(ch) + "</option>"; }).join("") +
-      "</select></div>";
+      "</select></div>" +
+      graduationYearFilterSelectHtml("graduationYearSelect", listGraduationYears(lastAgg.rawSources), state.graduationYearFilter);
 
     var chMonths = aggregateByChannel(sources, fiscalStartYear, state.channelFilter);
     var t = totals(chMonths, upToIdx);
@@ -999,7 +1079,11 @@
     { key: "daily", label: "デイリー実績" },
     { key: "settings", label: "設定" }
   ];
-  var state = { page: "dashboard", centerIdx: null, targets: {}, channelFilter: null, channelChartMetrics: ["reg"], annualChannelFilter: "__all__", monthCompareChannelFilter: "__all__" };
+  var state = {
+    page: "dashboard", centerIdx: null, targets: {}, channelFilter: null, channelChartMetrics: ["reg"],
+    annualChannelFilter: "__all__", monthCompareChannelFilter: "__all__",
+    fiscalStartYear: null, graduationYearFilter: "__all__"
+  };
   var lastAgg = null; // { sources, fiscalStartYear, agg, upToIdx }
 
   function renderNav() {
@@ -1024,6 +1108,7 @@
     if (id === "channelFilterSelect") { state.channelFilter = e.target.value; renderPage(); }
     else if (id === "annualChannelSelect") { state.annualChannelFilter = e.target.value; renderPage(); }
     else if (id === "monthCompareChannelSelect") { state.monthCompareChannelFilter = e.target.value; renderPage(); }
+    else if (id === "graduationYearSelect") { state.graduationYearFilter = e.target.value; renderDashboard(lastSources); }
   });
 
   function showEl(id, show) { document.getElementById(id).style.display = show ? "" : "none"; }
@@ -1062,6 +1147,15 @@
     if (isSettings) { renderSettingsContent(); return; }
 
     document.getElementById("tablePageTitle").textContent = PAGE_TITLES[state.page] || "";
+    // 経由/卒業年度プルダウンを自前で表示しないページでは、卒業年度で絞り込み中であることを一言添える
+    // （プルダウン自体は経由別内訳・年間管理・月間管理にしか置いていないため、他ページでの絞り込み漏れ誤解を防ぐ）
+    var PAGES_WITHOUT_OWN_FILTER_UI = { "monthly-actual": true, roi: true, cohort: true, daily: true };
+    if (PAGES_WITHOUT_OWN_FILTER_UI[state.page] && state.graduationYearFilter !== "__all__") {
+      document.getElementById("activeFilterNote").textContent = "卒業年度「" + state.graduationYearFilter + "」で絞り込み中です。";
+      showEl("activeFilterNote", true);
+    } else {
+      showEl("activeFilterNote", false);
+    }
     var showSelector = !!NEEDS_SELECTOR[state.page];
     showEl("monthSelectorRow", showSelector);
     if (showSelector) {
@@ -1087,6 +1181,7 @@
         buildChannelCompareTable(lastAgg.sources, lastAgg.fiscalStartYear, annualChannels, 0, upToIdx);
       document.getElementById("tablePageContent").innerHTML =
         channelFilterSelectHtml("annualChannelSelect", annualChannels, state.annualChannelFilter) +
+        graduationYearFilterSelectHtml("graduationYearSelect", listGraduationYears(lastAgg.rawSources), state.graduationYearFilter) +
         renderAnnualPage(annualMonths, upToIdx, annualFiltered) +
         annualCompareHtml;
     } else if (state.page === "month-compare") {
@@ -1094,12 +1189,19 @@
       var mcFiltered = state.monthCompareChannelFilter !== "__all__" && mcChannels.indexOf(state.monthCompareChannelFilter) !== -1;
       if (!mcFiltered) state.monthCompareChannelFilter = "__all__";
       var mcMonths = mcFiltered ? aggregateByChannel(lastAgg.sources, lastAgg.fiscalStartYear, state.monthCompareChannelFilter) : months;
+      // 前年同月比較用に、前年度分も同じ絞り込み条件（経由・卒業年度）で集計する
+      var priorFiscalYear = lastAgg.fiscalStartYear - 1;
+      var priorYearAvailable = listFiscalYears(lastAgg.rawSources).indexOf(priorFiscalYear) !== -1;
+      var priorYearMonths = priorYearAvailable
+        ? (mcFiltered ? aggregateByChannel(lastAgg.sources, priorFiscalYear, state.monthCompareChannelFilter) : aggregate(lastAgg.sources, priorFiscalYear).months)
+        : null;
       var mcCompareHtml = mcChannels.length === 0 ? "" :
         '<div class="kpi-group-label" style="margin-top:18px;">経由比較（' + esc(MONTH_LABELS[state.centerIdx]) + '）</div>' +
         buildChannelCompareTable(lastAgg.sources, lastAgg.fiscalStartYear, mcChannels, state.centerIdx, state.centerIdx);
       document.getElementById("tablePageContent").innerHTML =
         channelFilterSelectHtml("monthCompareChannelSelect", mcChannels, state.monthCompareChannelFilter) +
-        renderMonthComparePage(mcMonths, upToIdx, state.centerIdx, mcFiltered) +
+        graduationYearFilterSelectHtml("graduationYearSelect", listGraduationYears(lastAgg.rawSources), state.graduationYearFilter) +
+        renderMonthComparePage(mcMonths, upToIdx, state.centerIdx, mcFiltered, priorYearMonths) +
         mcCompareHtml;
     } else if (state.page === "daily") {
       document.getElementById("tablePageContent").innerHTML = renderDailyPage(lastAgg.sources, lastAgg.fiscalStartYear, months, state.centerIdx);
@@ -1108,8 +1210,26 @@
     }
   }
 
-  function renderDashboard(sources) {
-    var fiscalStartYear = currentFiscalStartYear();
+  // 年度セレクタ（サイドバー、全ページ共通）。データに実在する年度を新しい順に並べる。
+  function renderYearSelector(rawSources) {
+    var years = listFiscalYears(rawSources);
+    document.getElementById("fiscalYearCard").style.display = "";
+    document.getElementById("fiscalYearSelect").innerHTML = years.map(function (y) {
+      return '<option value="' + y + '"' + (y === state.fiscalStartYear ? " selected" : "") + ">" + y + "年度</option>";
+    }).join("");
+  }
+  document.getElementById("fiscalYearSelect").addEventListener("change", function (e) {
+    state.fiscalStartYear = parseInt(e.target.value, 10);
+    state.centerIdx = null; // 年度が変わると月の範囲も変わるため選択中の月をリセット
+    renderDashboard(lastSources);
+  });
+
+  function renderDashboard(rawSources) {
+    if (state.fiscalStartYear == null) state.fiscalStartYear = currentFiscalStartYear();
+    var fiscalStartYear = state.fiscalStartYear;
+    renderYearSelector(rawSources);
+
+    var sources = filterSourcesByGraduationYear(rawSources, state.graduationYearFilter);
     var agg = aggregate(sources, fiscalStartYear);
     // 「現在存在するデータのうち、最も新しい月」までを表示対象にする
     var upToIdx = 0;
@@ -1117,11 +1237,12 @@
       var m = agg.months[i];
       if (m.regSet.size || m.appCount || m.confCount || m.attCount || m.cost) upToIdx = i;
     }
-    lastAgg = { sources: sources, fiscalStartYear: fiscalStartYear, agg: agg, upToIdx: upToIdx };
+    lastAgg = { sources: sources, rawSources: rawSources, fiscalStartYear: fiscalStartYear, agg: agg, upToIdx: upToIdx };
 
     document.getElementById("fiscalYearLabel").textContent = fiscalStartYear + "年度（" + fiscalStartYear + "/12〜" + (fiscalStartYear + 1) + "/11）";
     var noteParts = [];
     if (agg.unknownStatusCount > 0) noteParts.push("未知の参加ステータス：" + agg.unknownStatusCount + "件（集計から除外）");
+    if (state.graduationYearFilter !== "__all__") noteParts.push("卒業年度「" + state.graduationYearFilter + "」で絞り込み中（経由別内訳・年間管理・月間管理ページの卒業年度プルダウンから変更できます）");
     noteParts.push("目標値はまだ設定できる仕組みがないため実績のみ表示。イベント種別分類はイベントマスタ未接続のため今回は省略。");
     document.getElementById("dashboardNote").textContent = noteParts.join(" / ");
 
