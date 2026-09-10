@@ -907,13 +907,23 @@
     (sources.uwStudents.data || []).forEach(function (r) { channelOf[r.studentId] = r.channel || "（未設定）"; });
     return channelOf;
   }
+  // 経由の表示順（固定）。この並びに無い値（文字化け等の未知の値）は末尾に件数の多い順で並べる。
+  var CHANNEL_ORDER = ["社長メシ", "送客", "社長メシ協賛", "飲食店", "飲食店未遂", "社長メシインターン", "（未設定）"];
   function listChannels(sources) {
     var counts = {};
     (sources.uwStudents.data || []).forEach(function (r) {
       var ch = r.channel || "（未設定）";
       counts[ch] = (counts[ch] || 0) + 1;
     });
-    return Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
+    var keys = Object.keys(counts);
+    keys.sort(function (a, b) {
+      var ia = CHANNEL_ORDER.indexOf(a), ib = CHANNEL_ORDER.indexOf(b);
+      if (ia === -1 && ib === -1) return counts[b] - counts[a];
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+    return keys;
   }
   // 経由フィルタ用プルダウン（「全体」＋各経由）。年間管理・月間管理・経由別内訳で共用。
   function channelFilterSelectHtml(id, channels, current) {
