@@ -243,12 +243,15 @@
     var p = jstParts(ts);
     return p.m === 12 ? p.y : p.y - 1;
   }
-  // データに実在する年度の一覧（新しい順）。年度切替プルダウンの選択肢に使う。
+  // 年度切替プルダウンの選択肢に使う年度一覧（新しい順）。
+  // 実データがある過去年度に加えて、目標値を事前入力できるよう現在年度〜MAX_FISCAL_YEARまでは
+  // データの有無に関わらず必ず選べるようにする。
+  var MAX_FISCAL_YEAR = 2030;
   function listFiscalYears(sources) {
     var years = {};
     (sources.uwStudents.data || []).forEach(function (r) { if (r.registeredAt) years[fiscalStartYearOf(r.registeredAt)] = true; });
     var arr = Object.keys(years).map(Number);
-    if (arr.indexOf(currentFiscalStartYear()) === -1) arr.push(currentFiscalStartYear());
+    for (var y = currentFiscalStartYear(); y <= MAX_FISCAL_YEAR; y++) { if (arr.indexOf(y) === -1) arr.push(y); }
     return arr.sort(function (a, b) { return b - a; });
   }
   // ルックアップ型フィールド（配列で返ってくる）を数値として正規化する。
@@ -1222,9 +1225,12 @@
   // 年度セレクタ（サイドバー、全ページ共通）。データに実在する年度を新しい順に並べる。
   function renderYearSelector(rawSources) {
     var years = listFiscalYears(rawSources);
+    var yearsWithData = {};
+    (rawSources.uwStudents.data || []).forEach(function (r) { if (r.registeredAt) yearsWithData[fiscalStartYearOf(r.registeredAt)] = true; });
     document.getElementById("fiscalYearCard").style.display = "";
     document.getElementById("fiscalYearSelect").innerHTML = years.map(function (y) {
-      return '<option value="' + y + '"' + (y === state.fiscalStartYear ? " selected" : "") + ">" + y + "年度</option>";
+      var label = y + "年度" + (yearsWithData[y] ? "" : "（実績なし）");
+      return '<option value="' + y + '"' + (y === state.fiscalStartYear ? " selected" : "") + ">" + esc(label) + "</option>";
     }).join("");
   }
   document.getElementById("fiscalYearSelect").addEventListener("change", function (e) {
