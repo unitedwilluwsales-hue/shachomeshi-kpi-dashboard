@@ -131,6 +131,7 @@
 <div class="card" id="dashboardCard" style="display:none;">
   <h2>年度サマリー <span id="fiscalYearLabel" style="color:var(--gray);font-weight:400;"></span></h2>
   <div class="note" id="dashboardNote"></div>
+  <div id="dashboardGraduationYearRow"></div>
   <div class="kpi-group-label">主要実績</div>
   <div class="kpi-grid kpi-grid-primary" id="kpiGridPrimary"></div>
   <div class="kpi-group-label">CPA（獲得単価）</div>
@@ -1108,7 +1109,13 @@
     if (id === "channelFilterSelect") { state.channelFilter = e.target.value; renderPage(); }
     else if (id === "annualChannelSelect") { state.annualChannelFilter = e.target.value; renderPage(); }
     else if (id === "monthCompareChannelSelect") { state.monthCompareChannelFilter = e.target.value; renderPage(); }
-    else if (id === "graduationYearSelect") { state.graduationYearFilter = e.target.value; renderDashboard(lastSources); }
+  });
+  // 卒業年度プルダウンはDashboard（#dashboardGraduationYearRow）と表形式ページ（#tablePageContent）の
+  // 両方に出現するため、document全体でイベント委譲して1箇所で処理する。
+  document.addEventListener("change", function (e) {
+    if (e.target.id !== "graduationYearSelect") return;
+    state.graduationYearFilter = e.target.value;
+    renderDashboard(lastSources);
   });
 
   function showEl(id, show) { document.getElementById(id).style.display = show ? "" : "none"; }
@@ -1136,6 +1143,8 @@
     if (state.centerIdx == null) state.centerIdx = upToIdx;
 
     if (isDashboard) {
+      document.getElementById("dashboardGraduationYearRow").innerHTML =
+        graduationYearFilterSelectHtml("graduationYearSelect", listGraduationYears(lastAgg.rawSources), state.graduationYearFilter);
       var t = totals(months, upToIdx);
       var tt = computeTargetTotals(state.targets || {}, lastAgg.fiscalStartYear, upToIdx);
       renderKpis(t, tt);
