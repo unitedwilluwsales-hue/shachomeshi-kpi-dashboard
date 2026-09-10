@@ -342,10 +342,10 @@
     return cohorts;
   }
 
-  function totals(months, upToIdx) {
+  function totals(months, upToIdx, fromIdx) {
     var t = { reg: 0, appCount: 0, appUnique: new Set(), confCount: 0, confUnique: new Set(),
       attCount: 0, attUnique: new Set(), cost: 0, concRevenue: 0, channelCounts: {} };
-    for (var i = 0; i <= upToIdx; i++) {
+    for (var i = fromIdx || 0; i <= upToIdx; i++) {
       var m = months[i];
       t.reg += m.regSet.size;
       t.appCount += m.appCount;
@@ -866,6 +866,31 @@
     return months;
   }
 
+  // 経由×指標の比較表（指定した月レンジ[fromIdx, toIdx]の累計で、全経由を横並びに比較する）
+  function buildChannelCompareTable(sources, fiscalStartYear, channels, fromIdx, toIdx) {
+    var cols = ["登録数", "応募数", "参加確定数", "当日参加数", "費用", "登録CPA", "応募CPA", "参加確定CPA", "当日参加CPA"];
+    var rows = channels.map(function (ch) {
+      var chMonths = aggregateByChannel(sources, fiscalStartYear, ch);
+      var t = totals(chMonths, toIdx, fromIdx);
+      var hasCost = t.cost > 0;
+      var cpaReg = hasCost ? safeDiv(t.cost, t.reg) : null;
+      var cpaApp = hasCost ? safeDiv(t.cost, t.appCount) : null;
+      var cpaConf = hasCost ? safeDiv(t.cost, t.confCount) : null;
+      var cpaAtt = hasCost ? safeDiv(t.cost, t.attCount) : null;
+      return {
+        label: ch,
+        cells: [
+          fmtInt(t.reg), fmtInt(t.appCount), fmtInt(t.confCount), fmtInt(t.attCount), fmtYen(t.cost),
+          cpaReg == null ? "―" : fmtYen(cpaReg),
+          cpaApp == null ? "―" : fmtYen(cpaApp),
+          cpaConf == null ? "―" : fmtYen(cpaConf),
+          cpaAtt == null ? "―" : fmtYen(cpaAtt)
+        ]
+      };
+    });
+    return '<div class="note">費用・CPAは、コスト実績の「経由」欄がその経由と一致するものだけを集計した参考値です。</div>' + buildTableHtml(cols, rows);
+  }
+
   function renderChannelPage(sources, fiscalStartYear, upToIdx) {
     var channels = listChannels(sources);
     if (channels.length === 0) return '<div class="note">データがありません。</div>';
@@ -953,7 +978,9 @@
       '<div class="kpi-group-label">月次推移</div>' + chartHtml +
       '<div class="kpi-group-label">ファネル</div>' + funnelHtml +
       '<div class="kpi-group-label">登録数：経由×月の内訳（参考）</div>' +
-      buildTableHtml(cols, tableRows, { totalColIndex: 12 });
+      buildTableHtml(cols, tableRows, { totalColIndex: 12 }) +
+      '<div class="kpi-group-label" style="margin-top:18px;">経由比較（年度累計）</div>' +
+      buildChannelCompareTable(sources, fiscalStartYear, channels, 0, upToIdx);
   }
 
   // ---- ページナビゲーション ----
@@ -1051,17 +1078,25 @@
       var annualFiltered = state.annualChannelFilter !== "__all__" && annualChannels.indexOf(state.annualChannelFilter) !== -1;
       if (!annualFiltered) state.annualChannelFilter = "__all__";
       var annualMonths = annualFiltered ? aggregateByChannel(lastAgg.sources, lastAgg.fiscalStartYear, state.annualChannelFilter) : months;
+      var annualCompareHtml = annualChannels.length === 0 ? "" :
+        '<div class="kpi-group-label" style="margin-top:18px;">経由比較（年度累計）</div>' +
+        buildChannelCompareTable(lastAgg.sources, lastAgg.fiscalStartYear, annualChannels, 0, upToIdx);
       document.getElementById("tablePageContent").innerHTML =
         channelFilterSelectHtml("annualChannelSelect", annualChannels, state.annualChannelFilter) +
-        renderAnnualPage(annualMonths, upToIdx, annualFiltered);
+        renderAnnualPage(annualMonths, upToIdx, annualFiltered) +
+        annualCompareHtml;
     } else if (state.page === "month-compare") {
       var mcChannels = listChannels(lastAgg.sources);
       var mcFiltered = state.monthCompareChannelFilter !== "__all__" && mcChannels.indexOf(state.monthCompareChannelFilter) !== -1;
       if (!mcFiltered) state.monthCompareChannelFilter = "__all__";
       var mcMonths = mcFiltered ? aggregateByChannel(lastAgg.sources, lastAgg.fiscalStartYear, state.monthCompareChannelFilter) : months;
+      var mcCompareHtml = mcChannels.length === 0 ? "" :
+        '<div class="kpi-group-label" style="margin-top:18px;">経由比較（' + esc(MONTH_LABELS[state.centerIdx]) + '）</div>' +
+        buildChannelCompareTable(lastAgg.sources, lastAgg.fiscalStartYear, mcChannels, state.centerIdx, state.centerIdx);
       document.getElementById("tablePageContent").innerHTML =
         channelFilterSelectHtml("monthCompareChannelSelect", mcChannels, state.monthCompareChannelFilter) +
-        renderMonthComparePage(mcMonths, upToIdx, state.centerIdx, mcFiltered);
+        renderMonthComparePage(mcMonths, upToIdx, state.centerIdx, mcFiltered) +
+        mcCompareHtml;
     } else if (state.page === "daily") {
       document.getElementById("tablePageContent").innerHTML = renderDailyPage(lastAgg.sources, lastAgg.fiscalStartYear, months, state.centerIdx);
     } else if (state.page === "channel") {
