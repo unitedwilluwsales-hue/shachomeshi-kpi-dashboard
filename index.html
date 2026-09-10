@@ -161,6 +161,11 @@
   <div class="toggle-row" id="settingsTabRow" style="margin:14px 0 0;"></div>
 </div>
 
+<div class="card">
+  <h2>データ手動更新</h2>
+  <div id="manualRefreshCardBody"></div>
+</div>
+
 <div class="card" id="settingsTabContent"></div>
 
 </div>
@@ -1055,7 +1060,7 @@
       document.getElementById("chartCardBody").innerHTML = buildTrendChartHtml(months, upToIdx, chartState.metrics, "dashboard");
       return;
     }
-    if (isSettings) { renderSettingsContent(); return; }
+    if (isSettings) { renderSettingsContent(); renderManualRefreshCard(); return; }
 
     document.getElementById("tablePageTitle").textContent = PAGE_TITLES[state.page] || "";
     var showSelector = !!NEEDS_SELECTOR[state.page];
@@ -1136,6 +1141,54 @@
   ];
   var settingsState = { tab: "fiscal", fieldMapping: null };
   var lastSources = null;
+  var lastFetchedAt = null, lastCacheHit = null;
+  var manualRefreshState = { date: null, used: 0, limit: 3, remaining: 3, busy: false };
+
+  function renderManualRefreshCard() {
+    var el = document.getElementById("manualRefreshCardBody");
+    if (!el) return;
+    var admin = document.getElementById("adminToggle").checked;
+    var m = manualRefreshState;
+    var lastStr = "―";
+    if (lastFetchedAt) {
+      var t = new Date(lastFetchedAt);
+      lastStr = t.getFullYear() + "/" + (t.getMonth() + 1) + "/" + t.getDate() + " " + String(t.getHours()).padStart(2, "0") + ":" + String(t.getMinutes()).padStart(2, "0");
+    }
+    var canClick = admin && m.remaining > 0 && !m.busy;
+    var btnLabel = m.busy ? "更新中..." : "今すぐ更新";
+    var noteText = !admin ? "手動更新には管理者モードが必要です。"
+      : m.remaining > 0 ? "本日はあと" + m.remaining + "回、手動更新できます（自動更新は6時間おきに別途動いています）。"
+      : "本日の手動更新回数（" + m.limit + "回）を使い切りました。日付が変わるとリセットされます。";
+    el.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">' +
+      '<div><div style="font-size:12.5px;">最終更新: ' + esc(lastStr) + '</div>' +
+      '<div class="note" style="margin:4px 0 0;">' + esc(noteText) + '</div></div>' +
+      '<button id="manualRefreshBtn"' + (canClick ? "" : " disabled") + '>' + esc(btnLabel) + '</button>' +
+      '</div>' +
+      '<div class="note" style="margin-top:6px;">本日の使用回数: ' + m.used + '/' + m.limit + (m.date ? "（" + esc(m.date) + "）" : "") + '</div>';
+  }
+  document.getElementById("manualRefreshCardBody").addEventListener("click", function (e) {
+    if (!e.target.closest("#manualRefreshBtn")) return;
+    if (manualRefreshState.busy || manualRefreshState.remaining <= 0) return;
+    manualRefreshState.busy = true;
+    renderManualRefreshCard();
+    fetch(WORKER_BASE_URL + "/api/refresh", { method: "POST" })
+      .then(checkResponse)
+      .then(function (json) {
+        manualRefreshState.busy = false;
+        if (json.manualRefresh) manualRefreshState = Object.assign({ busy: false }, json.manualRefresh);
+        lastSources = json.sources || lastSources;
+        lastFetchedAt = json.fetchedAt || lastFetchedAt;
+        lastCacheHit = json.cacheHit;
+        renderDashboard(lastSources); // renderPage()経由でrenderManualRefreshCard()も再描画される
+        showStatus("手動更新が完了しました。", "ok");
+      })
+      .catch(function (err) {
+        manualRefreshState.busy = false;
+        renderManualRefreshCard();
+        logError("手動更新", err.message);
+      });
+  });
 
   function monthKeyOf(fiscalStartYear, idx) {
     var meta = monthMeta(fiscalStartYear, idx);
@@ -1284,7 +1337,7 @@
 
   document.getElementById("adminToggle").addEventListener("change", function (e) {
     document.getElementById("adminBarLabel").textContent = "管理者モード：" + (e.target.checked ? "ON（編集可能）" : "OFF（閲覧のみ）");
-    if (state.page === "settings") renderSettingsContent();
+    if (state.page === "settings") { renderSettingsContent(); renderManualRefreshCard(); }
   });
 
   document.getElementById("settingsTabContent").addEventListener("click", function (e) {
@@ -1348,10 +1401,14 @@
     showStatus("読み込み中...", "loading");
     return Promise.all([
       fetch(WORKER_BASE_URL + "/api/data").then(checkResponse),
-      fetch(WORKER_BASE_URL + "/api/targets").then(checkResponse).catch(function (err) { logError("目標値取得", err.message); return { data: {} }; })
+      fetch(WORKER_BASE_URL + "/api/targets").then(checkResponse).catch(function (err) { logError("目標値取得", err.message); return { data: {} }; }),
+      fetch(WORKER_BASE_URL + "/api/refresh").then(checkResponse).catch(function (err) { logError("手動更新の残り回数取得", err.message); return null; })
     ]).then(function (results) {
       lastSources = results[0].sources || {};
+      lastFetchedAt = results[0].fetchedAt || null;
+      lastCacheHit = results[0].cacheHit;
       state.targets = results[1].data || {};
+      if (results[2] && results[2].manualRefresh) manualRefreshState = Object.assign({ busy: false }, results[2].manualRefresh);
       Object.keys(lastSources).forEach(function (key) {
         var s = lastSources[key];
         if (s.status === "error") logError("データ取得（" + key + "）", s.message || s.errorCode || "不明なエラー");
