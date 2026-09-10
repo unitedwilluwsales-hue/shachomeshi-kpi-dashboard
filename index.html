@@ -1580,13 +1580,16 @@
     });
   }
   // OCRの全文テキストから日付・金額をヒューリスティックに抽出する（完全ではないため要人力確認）
+  // "2025/11/30" "2025-11-30" "2025年11月30日" などを <input type="date"> が受け付ける
+  // "YYYY-MM-DD" 形式に変換する（見つからなければnull）。請求書OCRと日付欄への貼り付け対応の両方で使う。
+  function parseFlexibleDate(str) {
+    var m = String(str).match(/(\d{4})[年\/\-.](\d{1,2})[月\/\-.](\d{1,2})日?/);
+    if (!m) return null;
+    return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
+  }
   function parseInvoiceText(text) {
     var result = { invoiceDate: null, dueDate: null, amount: null };
-    function matchDateIn(str) {
-      var m = str.match(/(\d{4})[年\/\-.](\d{1,2})[月\/\-.](\d{1,2})日?/);
-      if (!m) return null;
-      return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
-    }
+    function matchDateIn(str) { return parseFlexibleDate(str); }
     function findDateNear(keywords) {
       for (var i = 0; i < keywords.length; i++) {
         var idx = text.indexOf(keywords[i]);
@@ -1775,6 +1778,18 @@
         .then(checkResponse)
         .then(function () { loadAll(); })
         .catch(function (err) { logError("コスト削除", err.message); });
+    }
+  });
+
+  // 請求日・振込期日欄に "2025/11/30" 等をそのまま貼り付けると自動で日付欄に反映されるようにする
+  // （<input type="date"> はブラウザ標準では貼り付けをそのまま解釈してくれないため）
+  document.getElementById("settingsTabContent").addEventListener("paste", function (e) {
+    if (e.target.id !== "f_invoice_date" && e.target.id !== "f_due_date") return;
+    var text = (e.clipboardData || window.clipboardData).getData("text");
+    var parsed = parseFlexibleDate(text);
+    if (parsed) {
+      e.preventDefault();
+      e.target.value = parsed;
     }
   });
 
