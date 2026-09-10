@@ -371,9 +371,9 @@
       var key = meta.year + "-" + String(meta.month).padStart(2, "0");
       var tm = targets[key];
       if (!tm) continue;
-      tt.cost += tm.cost || 0;
+      tt.cost += targetCostOf(tm);
       tt.reg += tm.reg || 0;
-      tt.concRevenue += (tm.concurrentPeople || 0) * (tm.concurrentUnitPrice || 0);
+      tt.concRevenue += targetConcRevenueOf(tm);
     }
     return tt;
   }
@@ -1179,6 +1179,11 @@
       '<div class="row"><label>現在の年度</label><div>' + y + "年度（" + y + "/12〜" + (y + 1) + "/11）</div></div>";
   }
 
+  // 費用目標＝登録人数×1人当たりのコスト、同時登録売上目標＝登録人数×同時登録率×平均単価×社数、
+  // という積み上げ式で入力してもらい、費用・売上そのものは自動計算する（直接入力はさせない）。
+  function targetCostOf(tm) { return (tm.reg || 0) * (tm.costPerReg || 0); }
+  function targetConcRevenueOf(tm) { return (tm.reg || 0) * ((tm.concurrentRate || 0) / 100) * (tm.avgUnitPrice || 0) * (tm.companyCount || 0); }
+
   function renderTargetsTab() {
     var admin = document.getElementById("adminToggle").checked;
     var y = lastAgg.fiscalStartYear;
@@ -1194,9 +1199,23 @@
       for (var i = 0; i < 12; i++) cells += "<td>" + inputCell(i, field, step) + "</td>";
       return "<tr><td>" + esc(label) + "</td>" + cells + "</tr>";
     }
-    var tbody = row("費用目標（¥）", "cost", 10000) + row("登録目標（人）", "reg", 1) +
-      row("同時登録人数目標（人）", "concurrentPeople", 1) + row("同時登録単価目標（¥）", "concurrentUnitPrice", 100);
-    return '<div class="note">' + (admin ? "編集するとDashboardの達成率に即時反映されます（フォーカスを外すと自動保存）。" : "編集するには管理者モードをONにしてください。") + "</div>" +
+    function computedRow(label, fn) {
+      var cells = "";
+      for (var i = 0; i < 12; i++) {
+        var tm = t[monthKeyOf(y, i)] || {};
+        cells += "<td>" + fmtYen(fn(tm)) + "</td>";
+      }
+      return '<tr class="rate-row"><td>' + esc(label) + "</td>" + cells + "</tr>";
+    }
+    var tbody =
+      row("登録目標（人）", "reg", 1) +
+      row("1人当たりのコスト目標（¥）", "costPerReg", 100) +
+      computedRow("→ 費用目標（自動計算）", targetCostOf) +
+      row("同時登録率目標（%）", "concurrentRate", 0.1) +
+      row("平均単価目標（¥）", "avgUnitPrice", 1000) +
+      row("社数目標（社）", "companyCount", 1) +
+      computedRow("→ 同時登録売上目標（自動計算）", targetConcRevenueOf);
+    return '<div class="note">' + (admin ? "編集するとDashboardの達成率に即時反映されます（フォーカスを外すと自動保存）。費用目標＝登録目標×1人当たりのコスト、同時登録売上目標＝登録目標×同時登録率×平均単価×社数、で自動計算されます。" : "編集するには管理者モードをONにしてください。") + "</div>" +
       '<div class="table-wrap"><table class="data-table"><thead>' + thead + "</thead><tbody>" + tbody + "</tbody></table></div>";
   }
 
@@ -1380,15 +1399,19 @@
       var i = wrap.querySelector('.target-input[data-month="' + idx + '"][data-field="' + field + '"]');
       return i ? i.value : 0;
     }
-    var body = { monthKey: monthKey, cost: get("cost"), reg: get("reg"), concurrentPeople: get("concurrentPeople"), concurrentUnitPrice: get("concurrentUnitPrice") };
+    var body = {
+      monthKey: monthKey, reg: get("reg"), costPerReg: get("costPerReg"),
+      concurrentRate: get("concurrentRate"), avgUnitPrice: get("avgUnitPrice"), companyCount: get("companyCount")
+    };
     fetch(WORKER_BASE_URL + "/api/targets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then(checkResponse)
       .then(function () {
         state.targets[monthKey] = {
-          cost: Number(body.cost) || 0, reg: Number(body.reg) || 0,
-          concurrentPeople: Number(body.concurrentPeople) || 0, concurrentUnitPrice: Number(body.concurrentUnitPrice) || 0
+          reg: Number(body.reg) || 0, costPerReg: Number(body.costPerReg) || 0,
+          concurrentRate: Number(body.concurrentRate) || 0, avgUnitPrice: Number(body.avgUnitPrice) || 0,
+          companyCount: Number(body.companyCount) || 0
         };
-        renderPage(); // Dashboardの達成率に反映
+        renderPage(); // 設定タブの自動計算行・Dashboardの達成率どちらも再描画される
       })
       .catch(function (err) { logError("目標の保存", err.message); });
   });
