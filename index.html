@@ -1428,12 +1428,84 @@
     return dataQualityHtml + errorLogHtml;
   }
 
+  // ---- 請求書OCR（コスト実績入力の自動化。無料・ブラウザ内処理のTesseract.js/pdf.jsのみ使用、外部APIは呼ばない）----
+  function loadScriptOnce(src) {
+    return new Promise(function (resolve, reject) {
+      var existing = document.querySelector('script[src="' + src + '"]');
+      if (existing) { existing.addEventListener("load", resolve); if (existing.getAttribute("data-loaded")) resolve(); return; }
+      var s = document.createElement("script");
+      s.src = src;
+      s.onload = function () { s.setAttribute("data-loaded", "1"); resolve(); };
+      s.onerror = function () { reject(new Error("スクリプト読み込みに失敗しました: " + src)); };
+      document.head.appendChild(s);
+    });
+  }
+  var ocrLibsPromise = null;
+  function loadOcrLibs() {
+    if (ocrLibsPromise) return ocrLibsPromise;
+    ocrLibsPromise = Promise.all([
+      loadScriptOnce("https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"),
+      loadScriptOnce("https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js")
+    ]).then(function () {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+    });
+    return ocrLibsPromise;
+  }
+  // PDFの1ページ目を画像化（Tesseractは画像しか読めないため）
+  function pdfFirstPageToCanvas(file) {
+    return file.arrayBuffer().then(function (buf) {
+      return window.pdfjsLib.getDocument({ data: buf }).promise;
+    }).then(function (pdf) {
+      return pdf.getPage(1);
+    }).then(function (page) {
+      var viewport = page.getViewport({ scale: 2.0 }); // 解像度を上げて認識精度を確保
+      var canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      var ctx = canvas.getContext("2d");
+      return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function () { return canvas; });
+    });
+  }
+  // OCRの全文テキストから日付・金額をヒューリスティックに抽出する（完全ではないため要人力確認）
+  function parseInvoiceText(text) {
+    var result = { date: null, amount: null };
+    var dateMatch = text.match(/(\d{4})[年\/\-.](\d{1,2})[月\/\-.](\d{1,2})日?/);
+    if (dateMatch) {
+      var mm = ("0" + dateMatch[2]).slice(-2), dd = ("0" + dateMatch[3]).slice(-2);
+      result.date = dateMatch[1] + "-" + mm + "-" + dd;
+    }
+    var keywords = ["御請求金額", "ご請求金額", "請求金額", "合計金額", "税込合計", "お支払金額", "合計", "小計"];
+    var amount = null;
+    for (var i = 0; i < keywords.length && amount == null; i++) {
+      var idx = text.indexOf(keywords[i]);
+      if (idx === -1) continue;
+      var tail = text.slice(idx, idx + 40);
+      var m2 = tail.match(/[¥￥]?\s*([\d,]{3,})\s*円?/);
+      if (m2) { var n = parseInt(m2[1].replace(/,/g, ""), 10); if (!isNaN(n)) amount = n; }
+    }
+    if (amount == null) {
+      // キーワードから見つからない場合は、円マーク付きの金額のうち最大のものを採用
+      var all = text.match(/[¥￥]\s*[\d,]{3,}/g) || [];
+      var nums = all.map(function (s) { return parseInt(s.replace(/[¥￥,\s]/g, ""), 10); }).filter(function (n) { return !isNaN(n); });
+      if (nums.length) amount = Math.max.apply(null, nums);
+    }
+    result.amount = amount;
+    return result;
+  }
+
   function renderCostsTab() {
     var admin = document.getElementById("adminToggle").checked;
     var list = (lastSources.costs && lastSources.costs.data) || [];
     var channelOpts = listChannels(lastSources);
     var formHtml = !admin ? "" :
       '<div class="card" style="margin-bottom:10px;"><h2>コスト実績を追加</h2>' +
+      '<div class="row" style="align-items:flex-start;">' +
+      '<label>請求書から読取</label>' +
+      '<div style="flex:1;">' +
+      '<input type="file" id="f_invoice" accept="image/*,application/pdf" style="margin-bottom:6px;">' +
+      '<button type="button" data-action="ocr-invoice" id="ocrInvoiceBtn">この請求書から自動入力</button>' +
+      '<div class="note" id="ocrStatus" style="margin:6px 0 0;">画像またはPDFの請求書を選んで実行すると、日付・金額欄を自動入力します（無料・ブラウザ内処理、外部送信なし）。認識精度は完全ではないため必ず内容を確認してください。</div>' +
+      '</div></div>' +
       '<div class="row"><label>日付</label><input type="date" id="f_date"></div>' +
       '<div class="row"><label>コストのかけ方</label><input type="text" id="f_method" placeholder="例：Instagram広告"></div>' +
       '<div class="row"><label>経由</label><select id="f_channel"><option value="">（全体・特定経由なし）</option>' +
@@ -1487,6 +1559,38 @@
   document.getElementById("settingsTabContent").addEventListener("click", function (e) {
     var clearLogBtn = e.target.closest('[data-action="clear-error-log"]');
     if (clearLogBtn) { errorLog.length = 0; renderSettingsContent(); return; }
+    var ocrBtn = e.target.closest('[data-action="ocr-invoice"]');
+    if (ocrBtn) {
+      var fileInput = document.getElementById("f_invoice");
+      var file = fileInput && fileInput.files && fileInput.files[0];
+      var statusEl = document.getElementById("ocrStatus");
+      if (!file) { statusEl.textContent = "先に請求書のファイル（画像またはPDF）を選択してください。"; return; }
+      ocrBtn.disabled = true;
+      statusEl.textContent = "読み取りライブラリを準備中...（初回のみ数秒〜数十秒かかります）";
+      loadOcrLibs().then(function () {
+        statusEl.textContent = "画像を準備中...";
+        if (file.type === "application/pdf") return pdfFirstPageToCanvas(file);
+        return file;
+      }).then(function (imgSource) {
+        statusEl.textContent = "文字を読み取り中...（数十秒かかる場合があります）";
+        return Tesseract.recognize(imgSource, "jpn+eng");
+      }).then(function (res) {
+        var text = res.data.text || "";
+        var parsed = parseInvoiceText(text);
+        if (parsed.date) document.getElementById("f_date").value = parsed.date;
+        if (parsed.amount != null) document.getElementById("f_amount").value = parsed.amount;
+        var foundText = (parsed.date ? "日付" : "") + (parsed.date && parsed.amount != null ? "・" : "") + (parsed.amount != null ? "金額" : "");
+        statusEl.innerHTML = (foundText ? esc(foundText) + "欄を自動入力しました。" : "日付・金額を自動検出できませんでした。") +
+          "内容は必ず目で確認してから登録してください。" +
+          '<details style="margin-top:4px;"><summary style="cursor:pointer;">読み取った全文を見る</summary><pre style="white-space:pre-wrap;font-size:10.5px;max-height:200px;overflow:auto;">' + esc(text) + "</pre></details>";
+        ocrBtn.disabled = false;
+      }).catch(function (err) {
+        statusEl.textContent = "読み取りに失敗しました: " + err.message;
+        ocrBtn.disabled = false;
+        logError("請求書OCR", err.message);
+      });
+      return;
+    }
     var refreshBtn = e.target.closest('[data-action="manual-refresh"]');
     if (refreshBtn) {
       if (manualRefreshState.busy || manualRefreshState.remaining <= 0) return;
