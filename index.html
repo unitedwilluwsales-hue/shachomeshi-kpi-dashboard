@@ -74,6 +74,10 @@
   .nav-btn:hover{background:var(--bg);}
   .nav-btn.active{background:var(--accent-tint);border-left-color:var(--accent);color:var(--accent);}
 
+  .settings-nav-card{width:200px;flex-shrink:0;padding:10px;position:sticky;top:24px;}
+  .settings-nav-card .kpi-group-label{padding:0 12px;}
+  .settings-nav-group-desc{font-size:10.5px;color:var(--gray);padding:0 12px 6px;margin-top:-4px;}
+
   .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;max-height:70vh;}
   table.data-table{width:auto;min-width:100%;border-collapse:collapse;font-size:12px;}
   table.data-table th,table.data-table td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);}
@@ -171,10 +175,13 @@
       <div class="admin-bar-desc">画面を再読み込みすると自動的にOFFへ戻ります。初期版では認証なし。</div>
     </div>
   </div>
-  <div class="toggle-row" id="settingsTabRow" style="margin:14px 0 0;"></div>
 </div>
 
-<div class="card" id="settingsTabContent"></div>
+<div style="display:flex;gap:20px;align-items:flex-start;">
+  <div class="card settings-nav-card" id="settingsTabRow"></div>
+  <div class="card" id="settingsTabContent" style="flex:1;min-width:0;"></div>
+</div>
+</div>
 
 </div>
 
@@ -944,11 +951,24 @@
     return '<div class="note">' + meta.year + "年" + meta.month + "月の日別実績（土日はグレー背景。祝日判定は未実装）。コスト・同時登録は月間実績を日数で均等割りした参考値です。</div>" + table;
   }
 
-  // データに実在する卒業年度の一覧（①UW学生リストの「卒業年度」フィールドから）
-  function listGraduationYears(sources) {
-    var counts = {};
+  // 同じ学生ID（アプリ登録UID）で①UW学生リストに複数回登録されているケースがあるため、
+  // 「経由」「卒業年度」の判定は常にこの関数で選んだ最新の1行（registeredAtが一番新しいもの）を正とする。
+  // 過去の登録行と経由・卒業年度が食い違っていても、最新の自己申告を優先する。
+  function buildLatestRecordByStudent(sources) {
+    var latest = {};
     (sources.uwStudents.data || []).forEach(function (r) {
-      if (r.graduationYear) counts[r.graduationYear] = (counts[r.graduationYear] || 0) + 1;
+      var cur = latest[r.studentId];
+      if (!cur || (r.registeredAt || 0) > (cur.registeredAt || 0)) latest[r.studentId] = r;
+    });
+    return latest;
+  }
+  // データに実在する卒業年度の一覧（①UW学生リストの「卒業年度」フィールドから、学生ごとに最新の1件のみ集計）
+  function listGraduationYears(sources) {
+    var latest = buildLatestRecordByStudent(sources);
+    var counts = {};
+    Object.keys(latest).forEach(function (id) {
+      var g = latest[id].graduationYear;
+      if (g) counts[g] = (counts[g] || 0) + 1;
     });
     return Object.keys(counts).sort();
   }
@@ -956,8 +976,9 @@
   // 「全体」なら元のsourcesをそのまま返す（コピーコスト無し）。
   function filterSourcesByGraduationYear(sources, gradYear) {
     if (!gradYear || gradYear === "__all__") return sources;
+    var latest = buildLatestRecordByStudent(sources);
     var allowedIds = {};
-    (sources.uwStudents.data || []).forEach(function (r) { if (r.graduationYear === gradYear) allowedIds[r.studentId] = true; });
+    Object.keys(latest).forEach(function (id) { if (latest[id].graduationYear === gradYear) allowedIds[id] = true; });
     function filterArr(arr, idField) { return (arr || []).filter(function (r) { return allowedIds[r[idField]]; }); }
     return {
       uwStudents: Object.assign({}, sources.uwStudents, { data: filterArr(sources.uwStudents.data, "studentId") }),
@@ -975,8 +996,9 @@
 
   // 学生ID→経由 の対応表（①UW学生リストの「経由」フィールドから）
   function buildChannelOfMap(sources) {
+    var latest = buildLatestRecordByStudent(sources);
     var channelOf = {};
-    (sources.uwStudents.data || []).forEach(function (r) { channelOf[r.studentId] = r.channel || "（未設定）"; });
+    Object.keys(latest).forEach(function (id) { channelOf[id] = latest[id].channel || "（未設定）"; });
     return channelOf;
   }
   // 経由の表示順（固定）。この並びに無い値（文字化け等の未知の値）は末尾に件数の多い順で並べる。
@@ -1388,6 +1410,12 @@
     { key: "field-mapping", label: "Larkフィールドマッピング" },
     { key: "data-errors", label: "データエラー" }
   ];
+  // タブが一列に並んでいて見にくいというフィードバックを受けて、意味のまとまりごとにグループ分けして表示する
+  var SETTINGS_TAB_GROUPS = [
+    { label: "基本設定", keys: ["fiscal", "refresh", "targets"] },
+    { label: "イベント関連", desc: "イベントマスタ未接続のため保留中", keys: ["event-targets", "event-master"] },
+    { label: "実績・診断", keys: ["costs", "field-mapping", "data-errors"] }
+  ];
   var settingsState = { tab: "fiscal", fieldMapping: null };
   var lastSources = null;
   var lastFetchedAt = null, lastCacheHit = null;
@@ -1421,8 +1449,15 @@
   }
 
   function renderSettingsTabs() {
-    document.getElementById("settingsTabRow").innerHTML = SETTINGS_TABS.map(function (t) {
-      return '<button class="toggle-btn' + (settingsState.tab === t.key ? " active" : "") + '" data-settings-tab="' + t.key + '">' + esc(t.label) + "</button>";
+    var tabByKey = {};
+    SETTINGS_TABS.forEach(function (t) { tabByKey[t.key] = t; });
+    document.getElementById("settingsTabRow").innerHTML = SETTINGS_TAB_GROUPS.map(function (g) {
+      return '<div class="kpi-group-label">' + esc(g.label) + "</div>" +
+        (g.desc ? '<div class="settings-nav-group-desc">' + esc(g.desc) + "</div>" : "") +
+        '<div class="nav-row">' + g.keys.map(function (key) {
+          var t = tabByKey[key];
+          return '<button class="nav-btn' + (settingsState.tab === key ? " active" : "") + '" data-settings-tab="' + key + '">' + esc(t.label) + "</button>";
+        }).join("") + "</div>";
     }).join("");
   }
 
@@ -1515,11 +1550,25 @@
     (lastSources.uwStudents.data || []).forEach(function (r) { if (r.studentId) registeredIds[r.studentId] = true; });
     var joinFailCount = 0;
     (lastSources.applications.data || []).forEach(function (r) { if (r.studentId && !registeredIds[r.studentId]) joinFailCount++; });
+
+    // ①UW学生リストで同じ学生IDが複数回登録されているケース（経由・卒業年度の判定に影響する）
+    var byStudent = {};
+    (lastSources.uwStudents.data || []).forEach(function (r) { (byStudent[r.studentId] = byStudent[r.studentId] || []).push(r); });
+    var dupGroups = Object.values(byStudent).filter(function (arr) { return arr.length > 1; });
+    var dupRecordCount = dupGroups.reduce(function (a, arr) { return a + arr.length; }, 0);
+    var dupInconsistentCount = dupGroups.filter(function (arr) {
+      var chs = {}, grads = {};
+      arr.forEach(function (r) { if (r.channel) chs[r.channel] = true; if (r.graduationYear) grads[r.graduationYear] = true; });
+      return Object.keys(chs).length > 1 || Object.keys(grads).length > 1;
+    }).length;
+
     var rows = [
       { type: "未知の参加ステータス", count: agg.unknownStatusCount, example: "参加状況が「参加確定/出席/遅刻/早退/欠席/拒否/学生キャンセル/応募中」以外の値" },
-      { type: "学生JOIN失敗", count: joinFailCount, example: "応募データの学生IDが①UW学生リストに存在しない（コホート集計からは除外、通常の応募・参加実績には残す）" },
+      { type: "学生JOIN失敗", count: joinFailCount, example: "応募データの学生IDが①UW学生リストに存在しない（コホート集計からは除外、通常の応募・参加実績には残す）。過去の参加者に多く、直近ほど少ない傾向" },
       { type: "①UW学生リスト：学生ID欠落", count: (lastSources.uwStudents && lastSources.uwStudents.skipped) || 0, example: "アプリ登録UIDが空の行。Worker側で集計対象から除外済み（別人が1人にまとまるのを防ぐため）" },
-      { type: "⑥UW個社応募者：学生ID欠落", count: (lastSources.applications && lastSources.applications.skipped) || 0, example: "学生IDが空の行。Worker側で集計対象から除外済み" }
+      { type: "⑥UW個社応募者：学生ID欠落", count: (lastSources.applications && lastSources.applications.skipped) || 0, example: "学生IDが空の行。Worker側で集計対象から除外済み" },
+      { type: "①UW学生リスト：同一学生の重複登録", count: dupGroups.length, example: "同じ学生IDで複数回登録されている人数（延べ" + dupRecordCount + "件）。経由・卒業年度は最新の登録内容を採用します" },
+      { type: "　└ うち経由・卒業年度が食い違うケース", count: dupInconsistentCount, example: "重複登録の中で経由または卒業年度の値が一致していない人数。最新の登録内容が優先されるため、古い内容とは異なる場合があります" }
     ];
     var dataQualityHtml = '<div class="note">個人情報は表示しません。異常データのみ除外し、正常データは通常どおり集計します。</div>' +
       rows.map(function (r) {
