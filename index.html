@@ -67,17 +67,22 @@
   .funnel-num{font-size:21px;font-weight:900;color:var(--accent-ink);margin-top:4px;}
   .funnel-arrow{flex:0 0 60px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--gray);font-weight:700;}
 
-  .app{display:flex;align-items:flex-start;gap:24px;}
-  .sidebar{width:232px;flex-shrink:0;position:sticky;top:24px;}
-  .sidebar .card{padding:10px;}
+  .app{display:flex;align-items:flex-start;gap:0;}
+  .sidebar{width:232px;flex-shrink:0;position:sticky;top:24px;border-right:1px solid var(--border);padding:4px 16px 24px 4px;margin-right:24px;}
   .main{flex:1;min-width:0;}
 
+  .sidebar-brand{padding:0 8px 16px;margin-bottom:14px;border-bottom:1px solid var(--border);}
+  .sidebar-brand-title{font-size:17px;font-weight:900;letter-spacing:.01em;}
+  .sidebar-brand-sub{font-size:11px;color:var(--gray);margin-top:3px;font-weight:500;display:flex;align-items:center;gap:6px;}
+  .sidebar-block{padding:0 8px 16px;margin-bottom:14px;border-bottom:1px solid var(--border);}
+
   .nav-row{display:flex;flex-direction:column;gap:2px;}
-  .nav-btn{display:block;width:100%;text-align:left;border:none;border-left:3px solid transparent;background:transparent;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:500;color:var(--text);cursor:pointer;}
+  .nav-btn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:none;border-left:3px solid transparent;background:transparent;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:500;color:var(--text);cursor:pointer;}
   .nav-btn:hover{background:oklch(97% 0.005 90);}
   .nav-btn.active{background:var(--accent-tint);border-left-color:var(--accent);color:var(--accent-ink);font-weight:700;}
+  .nav-btn.active svg{opacity:1;}
 
-  .settings-nav-card{width:200px;flex-shrink:0;padding:10px;position:sticky;top:24px;}
+  .settings-nav-card{width:200px;flex-shrink:0;padding:4px 16px 24px 4px;position:sticky;top:24px;border-right:1px solid var(--border);}
   .settings-nav-card .kpi-group-label{padding:0 12px;}
   .settings-nav-group-desc{font-size:10.5px;color:var(--gray);padding:0 12px 6px;margin-top:-4px;}
 
@@ -108,23 +113,23 @@
 </head>
 <body>
 
-<h1>社長メシ KPI Dashboard <span class="badge">実データ接続版</span></h1>
-<div class="sub">Worker: <code id="workerUrlLabel"></code></div>
-
 <div id="statusArea"></div>
 
 <div class="app">
 <div class="sidebar">
-  <div class="card" id="fiscalYearCard" style="display:none;">
+  <div class="sidebar-brand">
+    <div class="sidebar-brand-title">社長メシ KPI</div>
+    <div class="sidebar-brand-sub">Web Dashboard <span class="badge">実データ接続版</span></div>
+    <div class="sub" style="margin:6px 0 0;">Worker: <code id="workerUrlLabel"></code></div>
+  </div>
+  <div id="fiscalYearCard" class="sidebar-block" style="display:none;">
     <label style="font-size:11px;color:var(--gray);font-weight:700;display:block;margin-bottom:4px;">年度</label>
     <select id="fiscalYearSelect" style="width:100%;"></select>
     <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;margin-top:8px;cursor:pointer;">
       <input type="checkbox" id="yoyCompareToggle">前年比較を表示
     </label>
   </div>
-  <div class="card">
-    <div class="nav-row" id="navRow"></div>
-  </div>
+  <div class="nav-row" id="navRow"></div>
 </div>
 <div class="main">
 
@@ -180,9 +185,9 @@
   </div>
 </div>
 
-<div style="display:flex;gap:20px;align-items:flex-start;">
-  <div class="card settings-nav-card" id="settingsTabRow"></div>
-  <div class="card" id="settingsTabContent" style="flex:1;min-width:0;"></div>
+<div style="display:flex;gap:0;align-items:flex-start;">
+  <div class="settings-nav-card" id="settingsTabRow"></div>
+  <div class="card" id="settingsTabContent" style="flex:1;min-width:0;margin-left:24px;"></div>
 </div>
 </div>
 
@@ -1189,15 +1194,15 @@
 
   // ---- ページナビゲーション ----
   var NAV_PAGES = [
-    { key: "dashboard", label: "Dashboard" },
-    { key: "channel", label: "経由別内訳" },
-    { key: "monthly-actual", label: "当月発生ベース" },
-    { key: "roi", label: "集客ROI" },
-    { key: "cohort", label: "登録月ベース（コホート）" },
-    { key: "annual", label: "年間管理" },
-    { key: "month-compare", label: "月間管理" },
-    { key: "daily", label: "デイリー実績" },
-    { key: "settings", label: "設定" }
+    { key: "dashboard", label: "Dashboard", icon: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 12h18"/><path d="M12 3v18"/>' },
+    { key: "channel", label: "経由別内訳", icon: '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>' },
+    { key: "monthly-actual", label: "当月発生ベース", icon: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>' },
+    { key: "roi", label: "集客ROI", icon: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>' },
+    { key: "cohort", label: "登録月ベース（コホート）", icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
+    { key: "annual", label: "年間管理", icon: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>' },
+    { key: "month-compare", label: "月間管理", icon: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M8 15h.01"/><path d="M12 15h.01"/><path d="M16 15h.01"/>' },
+    { key: "daily", label: "デイリー実績", icon: '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>' },
+    { key: "settings", label: "設定", icon: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>' }
   ];
   var state = {
     page: "dashboard", centerIdx: null, targets: {}, channelFilter: null, channelChartMetrics: ["reg"],
@@ -1225,9 +1230,12 @@
       '<div style="font-size:10.5px;color:' + color + ';">前年比 ' + sign + (isYen ? fmtYen(diff) : fmtInt(diff)) + (pct != null ? "（" + sign + (pct * 100).toFixed(1) + "%）" : "") + "</div>";
   }
 
+  function navIconSvg(iconPath) {
+    return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:.75;">' + iconPath + "</svg>";
+  }
   function renderNav() {
     document.getElementById("navRow").innerHTML = NAV_PAGES.map(function (p) {
-      return '<button class="nav-btn' + (state.page === p.key ? " active" : "") + '" data-page="' + p.key + '">' + esc(p.label) + "</button>";
+      return '<button class="nav-btn' + (state.page === p.key ? " active" : "") + '" data-page="' + p.key + '">' + navIconSvg(p.icon) + "<span>" + esc(p.label) + "</span></button>";
     }).join("");
   }
   document.getElementById("navRow").addEventListener("click", function (e) {
