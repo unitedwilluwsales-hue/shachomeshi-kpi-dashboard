@@ -6,13 +6,16 @@
 <title>社長メシ KPI Dashboard</title>
 <style>
   :root{
-    --bg:#fafafa; --surface:#fff; --text:#1a1a1a; --gray:#767676; --border:#e3e0dc;
-    --accent:#d9631e; --accent-tint:#fdf0e6; --red:#b3261e; --green:#1e7a3d;
-    --green-bg:#e9f7ee; --red-bg:#fdeceb;
+    --bg: oklch(99% 0.003 90); --surface: oklch(100% 0 0); --text: oklch(23% 0.015 90);
+    --gray: oklch(55% 0.012 80); --border: oklch(90% 0.01 85);
+    --accent: oklch(64% 0.19 41); --accent-ink: oklch(46% 0.17 41);
+    --accent-tint: oklch(96% 0.03 55); --accent-tint-border: oklch(80% 0.08 50);
+    --red: oklch(48% 0.18 25); --green: oklch(40% 0.12 150);
+    --green-bg: oklch(94% 0.07 150); --red-bg: oklch(94% 0.06 25);
   }
   *{box-sizing:border-box;}
   body{margin:0;font-family:'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;background:var(--bg);color:var(--text);padding:24px;}
-  h1{font-size:19px;color:var(--accent);margin:0 0 4px;}
+  h1{font-size:20px;font-weight:900;color:var(--accent-ink);margin:0 0 4px;}
   h2{font-size:14px;margin:0 0 10px;}
   .sub{font-size:12px;color:var(--gray);margin-bottom:20px;}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px;max-width:960px;}
@@ -39,11 +42,11 @@
   .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-height:88px;}
   .kpi-grid-primary .kpi-card{border-left:3px solid var(--accent);}
   .kpi-grid-cpa .kpi-card{padding:10px 14px;min-height:64px;background:#fbfaf9;}
-  .kpi-label{font-size:11px;color:var(--gray);font-weight:700;}
-  .kpi-value{font-size:22px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;margin-top:4px;}
-  .kpi-grid-cpa .kpi-value{font-size:17px;}
-  .kpi-value.dim{color:var(--gray);font-size:16px;}
-  .kpi-grid-cpa .kpi-value.dim{font-size:14px;}
+  .kpi-label{font-size:11.5px;color:var(--gray);font-weight:700;}
+  .kpi-value{font-size:24px;font-weight:900;color:var(--accent-ink);font-variant-numeric:tabular-nums;margin-top:4px;line-height:1.15;}
+  .kpi-grid-cpa .kpi-value{font-size:18px;}
+  .kpi-value.dim{color:var(--gray);font-size:17px;}
+  .kpi-grid-cpa .kpi-value.dim{font-size:15px;}
 
   .cost-row{display:flex;gap:12px;flex-wrap:wrap;}
   .cost-card{flex:1;min-width:130px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
@@ -60,19 +63,19 @@
   .funnel{display:flex;gap:0;}
   .funnel-stage{flex:1;text-align:center;}
   .funnel-box{background:var(--accent-tint);border:1px solid var(--accent);border-radius:10px;padding:14px 6px;margin:0 4px;}
-  .funnel-name{font-size:11px;color:var(--gray);font-weight:700;}
-  .funnel-num{font-size:19px;font-weight:800;color:var(--accent);margin-top:4px;}
+  .funnel-name{font-size:11.5px;color:var(--gray);font-weight:700;}
+  .funnel-num{font-size:21px;font-weight:900;color:var(--accent-ink);margin-top:4px;}
   .funnel-arrow{flex:0 0 60px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--gray);font-weight:700;}
 
   .app{display:flex;align-items:flex-start;gap:24px;}
-  .sidebar{width:220px;flex-shrink:0;position:sticky;top:24px;}
+  .sidebar{width:232px;flex-shrink:0;position:sticky;top:24px;}
   .sidebar .card{padding:10px;}
   .main{flex:1;min-width:0;}
 
   .nav-row{display:flex;flex-direction:column;gap:2px;}
-  .nav-btn{display:block;width:100%;text-align:left;border:none;border-left:3px solid transparent;background:transparent;border-radius:8px;padding:10px 12px;font-size:12.5px;font-weight:700;color:var(--text);cursor:pointer;}
-  .nav-btn:hover{background:var(--bg);}
-  .nav-btn.active{background:var(--accent-tint);border-left-color:var(--accent);color:var(--accent);}
+  .nav-btn{display:block;width:100%;text-align:left;border:none;border-left:3px solid transparent;background:transparent;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:500;color:var(--text);cursor:pointer;}
+  .nav-btn:hover{background:oklch(97% 0.005 90);}
+  .nav-btn.active{background:var(--accent-tint);border-left-color:var(--accent);color:var(--accent-ink);font-weight:700;}
 
   .settings-nav-card{width:200px;flex-shrink:0;padding:10px;position:sticky;top:24px;}
   .settings-nav-card .kpi-group-label{padding:0 12px;}
