@@ -87,13 +87,13 @@
   .settings-nav-group-desc{font-size:10.5px;color:var(--gray);padding:0 12px 6px;margin-top:-4px;}
 
   .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;max-height:70vh;}
-  table.data-table{width:auto;min-width:100%;border-collapse:collapse;font-size:12px;}
-  table.data-table th,table.data-table td{padding:8px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);}
-  table.data-table th:first-child,table.data-table td:first-child{position:sticky;left:0;background:var(--surface);text-align:left;font-weight:700;z-index:1;border-right:1px solid var(--border);}
-  table.data-table thead th{position:sticky;top:0;background:var(--surface);z-index:2;font-weight:800;border-bottom:2px solid var(--border);}
+  table.data-table{width:auto;min-width:100%;border-collapse:collapse;font-size:13.5px;}
+  table.data-table th,table.data-table td{padding:9px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);font-weight:600;font-variant-numeric:tabular-nums;}
+  table.data-table th:first-child,table.data-table td:first-child{position:sticky;left:0;background:var(--surface);text-align:left;font-weight:800;z-index:1;border-right:1px solid var(--border);}
+  table.data-table thead th{position:sticky;top:0;background:var(--surface);z-index:2;font-weight:800;font-size:12.5px;border-bottom:2px solid var(--border);}
   table.data-table thead th:first-child{z-index:3;}
-  table.data-table tr.rate-row td{color:var(--gray);font-size:11px;}
-  table.data-table td.total-col,table.data-table th.total-col{background:var(--accent-tint);font-weight:800;}
+  table.data-table tr.rate-row td{color:var(--gray);font-size:12px;font-weight:500;}
+  table.data-table td.total-col,table.data-table th.total-col{background:var(--accent-tint);font-weight:900;color:var(--accent-ink);}
   /* 行の視認性向上：ゼブラ縞＋ホバーハイライト（固定列・合計列にも一貫して効かせる） */
   table.data-table tbody tr:nth-child(even) td{background:var(--bg);}
   table.data-table tbody tr:nth-child(even) td:first-child{background:var(--bg);}
@@ -591,7 +591,7 @@
       if (row.isRate) classes.push("rate-row");
       if (row.sectionStart) classes.push("section-start"); // 項目グループの先頭行に太い罫線を入れて区切る
       var classAttr = classes.length ? ' class="' + classes.join(" ") + '"' : "";
-      var styleAttr = row.isTotal ? ' style="font-weight:800;background:var(--accent-tint);"' : "";
+      var styleAttr = row.isTotal ? ' style="font-weight:900;background:var(--accent-tint);color:var(--accent-ink);"' : "";
       return "<tr" + classAttr + styleAttr + "><td>" + esc(row.label) + "</td>" +
         row.cells.map(function (c, i) {
           return "<td" + (opts.totalColIndex === i ? ' class="total-col"' : "") + ">" + esc(c) + "</td>";
