@@ -714,7 +714,7 @@
     return '<div class="note">' + note + '</div>' + buildTableHtml(cols, rows, { totalColIndex: 12 });
   }
 
-  function renderCohortPage(sources, fiscalStartYear, months, upToIdx, priorMonths) {
+  function renderCohortPage(sources, fiscalStartYear, months, upToIdx, priorMonths, channelMode) {
     var cohorts = buildCohortAgg(sources, fiscalStartYear);
     var priorCohorts = priorMonths ? buildCohortAgg(sources, fiscalStartYear - 1) : null;
     // このテーブルには合計列が無いため、YoY行も月別の12セルのみ（合計セルは追加しない）
@@ -745,10 +745,15 @@
       { label: "当日参加総件数", sectionStart: true, cells: monthCells(function (i) { return cohorts[i].attCount; }, false, null, upToIdx) },
       { label: "当日参加ユニーク", cells: monthCells(function (i) { return cohorts[i].attSet.size; }, false, null, upToIdx) },
       { label: "登録→当日参加率", isRate: true, cells: rateCells(function (i) { return cohorts[i].reg ? cohorts[i].attSet.size / cohorts[i].reg : 0; }, upToIdx) },
-      { label: "参加確定→当日参加率", isRate: true, cells: rateCells(function (i) { return cohorts[i].confSet.size ? cohorts[i].attSet.size / cohorts[i].confSet.size : 0; }, upToIdx) },
-      { label: "同時登録売上", sectionStart: true, cells: monthCells(function (i) { return months[i].concRevenue; }, true, null, upToIdx) },
-      { label: "最終CPA", cells: monthCells(function (i) { var c = months[i].cost; return c > 0 && cohorts[i].reg ? (c - months[i].concRevenue) / cohorts[i].reg : null; }, true, null, upToIdx) }
+      { label: "参加確定→当日参加率", isRate: true, cells: rateCells(function (i) { return cohorts[i].confSet.size ? cohorts[i].attSet.size / cohorts[i].confSet.size : 0; }, upToIdx) }
     ];
+    // 同時登録売上は経由に紐付けられないため、経由選択時は誤解を招く¥0表示を避けて非表示にする
+    if (!channelMode) {
+      rows.push(
+        { label: "同時登録売上", sectionStart: true, cells: monthCells(function (i) { return months[i].concRevenue; }, true, null, upToIdx) },
+        { label: "最終CPA", cells: monthCells(function (i) { var c = months[i].cost; return c > 0 && cohorts[i].reg ? (c - months[i].concRevenue) / cohorts[i].reg : null; }, true, null, upToIdx) }
+      );
+    }
     if (priorCohorts) {
       var cohortYoyReg = yoyRow("→ 登録数 前年比", function (c, i) { return c[i].reg; });
       cohortYoyReg.sectionStart = true;
@@ -756,6 +761,7 @@
       rows.push(yoyRow("→ 参加確定ユニーク 前年比", function (c, i) { return c[i].confSet.size; }));
     }
     var note = "応募・参加確定・当日参加は「その月に登録した学生」のその後全期間の累計です（発生月ではなく登録月で束ねています）。コストは登録月自身の投資コストをそのまま割り当てており、学生ごとの按分ではありません。" +
+      (channelMode ? " 経由選択時の費用・登録CPAは、コスト実績の「経由」欄が一致するものだけを集計しています。最終CPA・同時登録売上は経由に紐付けられないため非表示です。" : "") +
       (priorCohorts ? " 「前年比」の行は同じ登録月コホートの「前年実績（増減率）」の形式です。" : "");
     return '<div class="note">' + note + '</div>' + buildTableHtml(cols, rows);
   }
@@ -1039,6 +1045,22 @@
     Object.keys(latest).forEach(function (id) { channelOf[id] = latest[id].channel || "（未設定）"; });
     return channelOf;
   }
+  // 経由で学生を絞り込んだ「sources」を作る（登録月ベース＝コホート集計など、月別集計以外の
+  // 関数にも経由フィルタを効かせたい場合に使う。filterSourcesByGraduationYear()と同じ考え方）。
+  function filterSourcesByChannel(sources, channel) {
+    if (!channel || channel === "__all__") return sources;
+    var channelOf = buildChannelOfMap(sources);
+    var allowedIds = {};
+    Object.keys(channelOf).forEach(function (id) { if (channelOf[id] === channel) allowedIds[id] = true; });
+    function filterArr(arr, idField) { return (arr || []).filter(function (r) { return allowedIds[r[idField]]; }); }
+    return {
+      uwStudents: Object.assign({}, sources.uwStudents, { data: filterArr(sources.uwStudents.data, "studentId") }),
+      applications: Object.assign({}, sources.applications, { data: filterArr(sources.applications.data, "studentId") }),
+      shukatsuMeshi: Object.assign({}, sources.shukatsuMeshi, { data: filterArr(sources.shukatsuMeshi.data, "studentKey") }),
+      simultaneousRegistrations: sources.simultaneousRegistrations,
+      costs: sources.costs
+    };
+  }
   // 経由の表示順（固定）。この並びに無い値（文字化け等の未知の値）は末尾に件数の多い順で並べる。
   var CHANNEL_ORDER = ["社長メシ", "送客", "社長メシ協賛", "飲食店", "飲食店未遂", "社長メシインターン", "（未設定）"];
   function listChannels(sources) {
@@ -1236,7 +1258,7 @@
   ];
   var state = {
     page: "dashboard", centerIdx: null, targets: {}, channelFilter: null, channelChartMetrics: ["reg"],
-    annualChannelFilter: "__all__", monthCompareChannelFilter: "__all__",
+    annualChannelFilter: "__all__", monthCompareChannelFilter: "__all__", cohortChannelFilter: "__all__",
     fiscalStartYear: null, graduationYearFilter: "__all__", yoyCompare: false
   };
   var lastAgg = null; // { sources, fiscalStartYear, agg, upToIdx }
@@ -1285,6 +1307,7 @@
     if (id === "channelFilterSelect") { state.channelFilter = e.target.value; renderPage(); }
     else if (id === "annualChannelSelect") { state.annualChannelFilter = e.target.value; renderPage(); }
     else if (id === "monthCompareChannelSelect") { state.monthCompareChannelFilter = e.target.value; renderPage(); }
+    else if (id === "cohortChannelSelect") { state.cohortChannelFilter = e.target.value; renderPage(); }
   });
   // 卒業年度プルダウンはDashboard（#dashboardGraduationYearRow）と表形式ページ（#tablePageContent）の
   // 両方に出現するため、document全体でイベント委譲して1箇所で処理する。
@@ -1336,7 +1359,7 @@
     document.getElementById("tablePageTitle").textContent = PAGE_TITLES[state.page] || "";
     // 経由/卒業年度プルダウンを自前で表示しないページでは、卒業年度で絞り込み中であることを一言添える
     // （プルダウン自体は経由別内訳・年間管理・月間管理にしか置いていないため、他ページでの絞り込み漏れ誤解を防ぐ）
-    var PAGES_WITHOUT_OWN_FILTER_UI = { "monthly-actual": true, roi: true, cohort: true, daily: true };
+    var PAGES_WITHOUT_OWN_FILTER_UI = { "monthly-actual": true, roi: true, daily: true };
     if (PAGES_WITHOUT_OWN_FILTER_UI[state.page] && state.graduationYearFilter !== "__all__") {
       document.getElementById("activeFilterNote").textContent = "卒業年度「" + state.graduationYearFilter + "」で絞り込み中です。";
       showEl("activeFilterNote", true);
@@ -1357,7 +1380,15 @@
     } else if (state.page === "roi") {
       document.getElementById("tablePageContent").innerHTML = renderRoiPage(months, upToIdx, getPriorYearMonths());
     } else if (state.page === "cohort") {
-      document.getElementById("tablePageContent").innerHTML = renderCohortPage(lastAgg.sources, lastAgg.fiscalStartYear, months, upToIdx, getPriorYearMonths());
+      var cohortChannels = listChannels(lastAgg.sources);
+      var cohortFiltered = state.cohortChannelFilter !== "__all__" && cohortChannels.indexOf(state.cohortChannelFilter) !== -1;
+      if (!cohortFiltered) state.cohortChannelFilter = "__all__";
+      var cohortSources = cohortFiltered ? filterSourcesByChannel(lastAgg.sources, state.cohortChannelFilter) : lastAgg.sources;
+      var cohortMonths = cohortFiltered ? aggregateByChannel(lastAgg.sources, lastAgg.fiscalStartYear, state.cohortChannelFilter) : months;
+      document.getElementById("tablePageContent").innerHTML =
+        channelFilterSelectHtml("cohortChannelSelect", cohortChannels, state.cohortChannelFilter) +
+        graduationYearFilterSelectHtml("graduationYearSelect", listGraduationYears(lastAgg.rawSources), state.graduationYearFilter) +
+        renderCohortPage(cohortSources, lastAgg.fiscalStartYear, cohortMonths, upToIdx, getPriorYearMonths(cohortFiltered ? state.cohortChannelFilter : null), cohortFiltered);
     } else if (state.page === "annual") {
       var annualChannels = listChannels(lastAgg.sources);
       var annualFiltered = state.annualChannelFilter !== "__all__" && annualChannels.indexOf(state.annualChannelFilter) !== -1;
