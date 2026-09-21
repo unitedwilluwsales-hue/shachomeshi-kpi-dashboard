@@ -1510,7 +1510,7 @@
     function inputCell(idx, field, step) {
       var key = monthKeyOf(y, idx);
       var v = (t[key] && t[key][field]) || 0;
-      return '<input type="number" class="target-input" style="width:100px;" value="' + v + '" step="' + step + '" min="0" data-month="' + idx + '" data-field="' + field + '"' + (admin ? "" : " disabled") + ">";
+      return '<input type="number" class="target-input" style="width:100px;font-size:13.5px;font-weight:600;color:var(--text);" value="' + v + '" step="' + step + '" min="0" data-month="' + idx + '" data-field="' + field + '"' + (admin ? "" : " disabled") + ">";
     }
     var thead = '<tr><th></th><th class="total-col">合計</th>' + MONTH_LABELS.map(function (l) { return "<th>" + esc(l) + "</th>"; }).join("") + "</tr>";
     function sumField(field) {
@@ -1526,8 +1526,10 @@
       var totalCell = opts.sumTotal
         ? '<td class="total-col">' + fmtInt(sumField(field)) + "</td>"
         : '<td class="total-col" style="color:var(--gray);">―</td>';
-      return "<tr><td>" + esc(label) + "</td>" + totalCell + cells + "</tr>";
+      return "<tr" + (opts.sectionStart ? ' class="section-start"' : "") + "><td>" + esc(label) + "</td>" + totalCell + cells + "</tr>";
     }
+    // 自動計算される費用目標・同時登録売上目標は入力欄の中で一番重要な結果なので、
+    // 補助的な「率の行」ではなく合計行と同じ強い強調（太字900＋アクセント背景）にする
     function computedRow(label, fn) {
       var cells = "", total = 0;
       for (var i = 0; i < 12; i++) {
@@ -1536,13 +1538,13 @@
         total += v;
         cells += "<td>" + fmtYen(v) + "</td>";
       }
-      return '<tr class="rate-row"><td>' + esc(label) + '</td><td class="total-col">' + fmtYen(total) + "</td>" + cells + "</tr>";
+      return '<tr style="font-weight:900;background:var(--accent-tint);color:var(--accent-ink);"><td>' + esc(label) + '</td><td class="total-col">' + fmtYen(total) + "</td>" + cells + "</tr>";
     }
     var tbody =
       row("登録目標（人）", "reg", 1, { sumTotal: true }) +
       row("1人当たりのコスト目標（¥）", "costPerReg", 100) +
       computedRow("→ 費用目標（自動計算）", targetCostOf) +
-      row("同時登録率目標（%）", "concurrentRate", 0.1) +
+      row("同時登録率目標（%）", "concurrentRate", 0.1, { sectionStart: true }) +
       row("平均単価目標（¥）", "avgUnitPrice", 1000) +
       row("社数目標（社）", "companyCount", 1, { sumTotal: true }) +
       computedRow("→ 同時登録売上目標（自動計算）", targetConcRevenueOf);
